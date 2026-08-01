@@ -7,6 +7,9 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
 ## Features
 
 - Select or drag & drop one or multiple images (any browser-supported image format: PNG, WEBP, GIF, BMP, JPG, ...)
+- **Bilder / Dateien** toggle above the picker (default: **Bilder**):
+  - **Bilder** uses the OS photo picker — quick to browse, but on Android the original file name is not preserved (the OS gives the browser an anonymized temporary name instead)
+  - **Dateien** opens the regular file browser instead — slower to navigate, but keeps the real file name if you pick it from "Files"/"My Files" rather than "Google Photos"
 - All selected images are converted to `.jpg`
 - Adjustable JPEG quality (default: 75%)
 - Optional renaming — only applied if "Rename files" is checked **and** the pattern field isn't empty; otherwise the original file name is kept (with `.jpg` as the extension, since the file is always converted)
@@ -54,6 +57,18 @@ Images are read locally via the `FileReader` API, drawn onto an in-memory `<canv
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead.
 
 ## Changelog
+
+### 1.0.6
+- Added a **Bilder / Dateien** toggle (default: Bilder) above the picker. "Dateien" switches the file input's `accept` attribute to `*/*`, which makes Android open its regular file browser (Storage Access Framework) instead of the anonymized photo picker — preserving real file names when picked from "Files"/"My Files"
+- Non-image files selected in "Dateien" mode are ignored with a notice, same as before
+
+### 1.0.5
+- Renaming now only applies if "Rename files" is checked **and** the pattern field isn't empty; otherwise the original name is kept (as `name.jpg`)
+- Removed the hover/long-press tooltip for the original name — no longer needed given the rule above
+- Rename placeholders `$H`/`$N`/`$S` renamed to `$h`/`$m`/`$s`
+- Added a `$Q` placeholder for the JPEG quality used
+- Added a preset dropdown with ready-made patterns: `DSC_$Y$M$D_$h$m$s`, `S23_$Y$M$D_$h$m$s`, `*_smalled`
+- Example numbers in the app now use `00042` instead of `00032`
 
 ### 1.0.4
 - Fixed the original-name tooltip being clipped/truncated by a CSS `overflow: hidden` on the wrong element, which made it display incorrectly

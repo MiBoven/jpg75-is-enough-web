@@ -60,6 +60,17 @@
   .drop strong { color: var(--text); }
   input[type=file] { display: none; }
 
+  .segment {
+    display: flex; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 3px; margin-bottom: 10px; gap: 3px;
+  }
+  .segment button {
+    flex: 1; background: none; border: none; color: var(--text-secondary);
+    padding: 8px 10px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .segment button.active { background: var(--accent); color: var(--accent-text); }
+  .segment-hint { font-size: 12px; color: var(--text-secondary); margin: -6px 0 16px; }
+
   .card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
     padding: 14px 16px; margin-bottom: 12px;
@@ -151,6 +162,12 @@
 </header>
 <p class="sub">Converts any image to a JPG at reduced quality — entirely in your browser. Nothing is uploaded.</p>
 
+<div class="segment" id="sourceToggle">
+  <button type="button" class="seg-btn active" data-mode="images">Bilder</button>
+  <button type="button" class="seg-btn" data-mode="files">Dateien</button>
+</div>
+<p class="segment-hint" id="sourceHint">Photo picker — fast, but original file names aren't preserved on Android.</p>
+
 <div class="drop" id="drop">
   <p><strong>Tap to choose images</strong><br>or drag and drop them here</p>
   <input type="file" id="fileInput" accept="image/*" multiple>
@@ -192,7 +209,7 @@
   <button id="allBtn">Download all as ZIP</button>
 </div>
 
-<footer>JPG75 is Enough · v1.0.5</footer>
+<footer>JPG75 is Enough · v1.0.6</footer>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -236,6 +253,8 @@ themeToggle.addEventListener('click', () => {
 // ---------- Elements ----------
 const drop = document.getElementById('drop');
 const fileInput = document.getElementById('fileInput');
+const sourceToggle = document.getElementById('sourceToggle');
+const sourceHint = document.getElementById('sourceHint');
 const list = document.getElementById('list');
 const qualitySlider = document.getElementById('quality');
 const qualityLabel = document.getElementById('qualityLabel');
@@ -328,6 +347,21 @@ function updateAllNames() {
 infoBtn.addEventListener('click', () => modalBg.classList.add('open'));
 closeModal.addEventListener('click', () => modalBg.classList.remove('open'));
 modalBg.addEventListener('click', (e) => { if (e.target === modalBg) modalBg.classList.remove('open'); });
+
+// ---------- Source toggle: Bilder (photo picker) vs Dateien (file browser) ----------
+const hints = {
+  images: "Photo picker — fast, but original file names aren't preserved on Android.",
+  files: 'File browser — pick "Files"/"My Files" (not Google Photos) to keep original file names.'
+};
+sourceToggle.addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg-btn');
+  if (!btn) return;
+  sourceToggle.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const mode = btn.dataset.mode;
+  fileInput.accept = mode === 'files' ? '*/*' : 'image/*';
+  sourceHint.textContent = hints[mode];
+});
 
 // ---------- Drag & drop / file picking ----------
 drop.addEventListener('click', () => fileInput.click());
