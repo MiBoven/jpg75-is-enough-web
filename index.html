@@ -71,7 +71,7 @@
 
   input[type=range] { flex: 1; accent-color: var(--accent); }
   input[type=text], input[type=checkbox] { accent-color: var(--accent); }
-  input[type=text] {
+  input[type=text], select {
     flex: 1; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
     border-radius: 8px; padding: 8px 10px; font-size: 14px;
   }
@@ -92,18 +92,8 @@
   .item img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
   .item .info { flex: 1; min-width: 0; font-size: 12.5px; }
   .item .name {
-    font-weight: 600; position: relative; width: fit-content; max-width: 100%;
+    font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .item .name .text {
-    display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .item .name .tooltip {
-    display: none; position: absolute; left: 0; top: 100%; margin-top: 4px;
-    background: var(--surface-2); color: var(--text-secondary); border: 1px solid var(--border);
-    padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 400;
-    white-space: nowrap; z-index: 5;
-  }
-  .item .name:hover .tooltip, .item .name.show-tooltip .tooltip { display: block; }
   .item .sizes { color: var(--text-secondary); }
   .item a.dl {
     background: var(--accent); color: var(--accent-text); padding: 7px 12px; border-radius: 8px;
@@ -181,8 +171,16 @@
   </div>
   <div id="renameFields" style="display:none; margin-top:12px;">
     <div class="row">
-      <input type="text" id="pattern" placeholder="e.g. IMG_##### or *_compressed">
+      <input type="text" id="pattern" placeholder="e.g. *_$Q or DSC_$Y$M$D_$h$m$s">
       <button class="icon" id="infoBtn" title="Naming pattern help">i</button>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <select id="patternPreset" style="flex:1;">
+        <option value="">Choose a preset pattern…</option>
+        <option value="DSC_$Y$M$D_$h$m$s">DSC_$Y$M$D_$h$m$s</option>
+        <option value="S23_$Y$M$D_$h$m$s">S23_$Y$M$D_$h$m$s</option>
+        <option value="*_smalled">*_smalled</option>
+      </select>
     </div>
     <div class="preview" id="preview">Example: image.png → image.jpg</div>
   </div>
@@ -194,26 +192,27 @@
   <button id="allBtn">Download all as ZIP</button>
 </div>
 
-<footer>JPG75 is Enough · v1.0.4</footer>
+<footer>JPG75 is Enough · v1.0.5</footer>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
     <h2>Naming pattern placeholders</h2>
     <table>
-      <tr><td>#</td><td>One digit of a sequential number (repeat for padding, e.g. ##### = 00032)</td></tr>
+      <tr><td>#</td><td>One digit of a sequential number (repeat for padding, e.g. ##### = 00042)</td></tr>
       <tr><td>*</td><td>Original file name (without extension)</td></tr>
       <tr><td>$Y</td><td>Year the photo was taken (or last modified, if unknown)</td></tr>
       <tr><td>$M</td><td>Month, same source</td></tr>
       <tr><td>$D</td><td>Day, same source</td></tr>
-      <tr><td>$H</td><td>Hour, same source</td></tr>
-      <tr><td>$N</td><td>Minute, same source</td></tr>
-      <tr><td>$S</td><td>Second, same source</td></tr>
+      <tr><td>$h</td><td>Hour, same source</td></tr>
+      <tr><td>$m</td><td>Minute, same source</td></tr>
+      <tr><td>$s</td><td>Second, same source</td></tr>
+      <tr><td>$Q</td><td>JPEG quality used (e.g. 75)</td></tr>
     </table>
     <div class="examples">
       <strong>Examples</strong><br>
-      <code>Image#####</code> → 32nd image becomes <code>Image00032.jpg</code><br>
-      <code>$Y-$M-$D_#####</code> → 32nd image, taken 30.9.2004 → <code>2004-09-30_00032.jpg</code><br>
-      <code>*_tn</code> → image named <code>John.png</code> becomes <code>John_tn.jpg</code>
+      <code>Image#####</code> → 42nd image becomes <code>Image00042.jpg</code><br>
+      <code>$Y$M$D_$h$m$s</code> → taken 30.9.2004, 14:05:09 → <code>20040930_140509.jpg</code><br>
+      <code>*_$Q</code> → image named <code>picture.png</code>, quality 75 → <code>picture_75.jpg</code>
     </div>
     <button class="close" id="closeModal">Close</button>
   </div>
@@ -245,6 +244,7 @@ const downloadAllBtn = document.getElementById('downloadAllBtn');
 const renameEnabled = document.getElementById('renameEnabled');
 const renameFields = document.getElementById('renameFields');
 const patternInput = document.getElementById('pattern');
+const patternPreset = document.getElementById('patternPreset');
 const preview = document.getElementById('preview');
 const modalBg = document.getElementById('modalBg');
 const infoBtn = document.getElementById('infoBtn');
@@ -269,10 +269,18 @@ patternInput.addEventListener('input', () => {
   updatePreview();
   updateAllNames();
 });
+patternPreset.addEventListener('change', () => {
+  if (!patternPreset.value) return;
+  patternInput.value = patternPreset.value;
+  renameEnabled.checked = true;
+  renameFields.style.display = 'block';
+  updatePreview();
+  updateAllNames();
+});
 
 function pad(num, len) { return String(num).padStart(len, '0'); }
 
-function buildName(pattern, { index, originalBase, dateObj }) {
+function buildName(pattern, { index, originalBase, dateObj, quality }) {
   if (!pattern) return originalBase;
   const d = dateObj || new Date();
   let out = pattern;
@@ -281,35 +289,37 @@ function buildName(pattern, { index, originalBase, dateObj }) {
   out = out.replaceAll('$Y', d.getFullYear());
   out = out.replaceAll('$M', pad(d.getMonth() + 1, 2));
   out = out.replaceAll('$D', pad(d.getDate(), 2));
-  out = out.replaceAll('$H', pad(d.getHours(), 2));
-  out = out.replaceAll('$N', pad(d.getMinutes(), 2));
-  out = out.replaceAll('$S', pad(d.getSeconds(), 2));
+  out = out.replaceAll('$h', pad(d.getHours(), 2));
+  out = out.replaceAll('$m', pad(d.getMinutes(), 2));
+  out = out.replaceAll('$s', pad(d.getSeconds(), 2));
+  out = out.replaceAll('$Q', quality != null ? quality : qualitySlider.value);
   return out;
 }
 
-function computeName(originalName, index, dateObj) {
+function computeName(originalName, index, dateObj, quality) {
   const originalBase = originalName.replace(/\.[^.]+$/, '');
+  const pattern = patternInput.value.trim();
   let base = originalBase;
-  if (renameEnabled.checked) {
-    const pattern = patternInput.value.trim();
-    base = buildName(pattern, { index, originalBase, dateObj }) || originalBase;
+  if (renameEnabled.checked && pattern) {
+    base = buildName(pattern, { index, originalBase, dateObj, quality }) || originalBase;
   }
   return base + '.jpg';
 }
 
 function updatePreview() {
   if (!renameEnabled.checked) return;
-  const name = buildName(patternInput.value.trim(), { index: 32, originalBase: 'image' });
-  preview.textContent = `Example: image.png → ${name || 'image'}.jpg`;
+  const name = buildName(patternInput.value.trim(), {
+    index: 42, originalBase: 'picture', quality: qualitySlider.value
+  });
+  preview.textContent = `Example: picture.png → ${name || 'picture'}.jpg`;
 }
 updatePreview();
 
 function updateAllNames() {
   processed.forEach(p => {
-    const newName = computeName(p.originalName, p.index, p.dateObj);
+    const newName = computeName(p.originalName, p.index, p.dateObj, p.quality);
     p.name = newName;
     p.nameEl.textContent = newName;
-    p.tooltipEl.textContent = p.originalName;
     p.dlEl.download = newName;
   });
 }
@@ -444,7 +454,8 @@ function loadImage(src) {
 async function processFile(file) {
   counter += 1;
   const index = counter;
-  const quality = parseInt(qualitySlider.value) / 100;
+  const qualityPercent = parseInt(qualitySlider.value);
+  const quality = qualityPercent / 100;
 
   const dateObj = await getFileDate(file);
   let dataUrl, img;
@@ -465,8 +476,8 @@ async function processFile(file) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0);
   canvas.toBlob((blob) => {
-    const newName = computeName(file.name, index, dateObj);
-    addItem(file, blob, dataUrl, newName, index, dateObj);
+    const newName = computeName(file.name, index, dateObj, qualityPercent);
+    addItem(file, blob, dataUrl, newName, index, dateObj, qualityPercent);
   }, 'image/jpeg', quality);
 }
 
@@ -476,7 +487,7 @@ function updateBulkButtons() {
   downloadAllBtn.style.display = show;
 }
 
-function addItem(file, blob, thumbSrc, newName, index, dateObj) {
+function addItem(file, blob, thumbSrc, newName, index, dateObj, quality) {
   const id = ++itemCounter;
   const row = document.createElement('div');
   row.className = 'item';
@@ -489,34 +500,17 @@ function addItem(file, blob, thumbSrc, newName, index, dateObj) {
   info.className = 'info';
   const savings = Math.round((1 - blob.size / file.size) * 100);
 
-  const nameWrap = document.createElement('div');
-  nameWrap.className = 'name';
-  nameWrap.title = file.name;
-  const nameEl = document.createElement('span');
-  nameEl.className = 'text';
+  const nameEl = document.createElement('div');
+  nameEl.className = 'name';
   nameEl.textContent = newName;
-  const tooltipEl = document.createElement('span');
-  tooltipEl.className = 'tooltip';
-  tooltipEl.textContent = file.name;
-  nameWrap.appendChild(nameEl);
-  nameWrap.appendChild(tooltipEl);
+  nameEl.title = newName;
 
   const sizes = document.createElement('div');
   sizes.className = 'sizes';
   sizes.textContent = `${formatSize(file.size)} → ${formatSize(blob.size)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}`;
 
-  info.appendChild(nameWrap);
+  info.appendChild(nameEl);
   info.appendChild(sizes);
-
-  // long-press to reveal original name on touch devices
-  let pressTimer;
-  nameWrap.addEventListener('touchstart', () => {
-    pressTimer = setTimeout(() => nameWrap.classList.add('show-tooltip'), 400);
-  });
-  ['touchend', 'touchcancel'].forEach(ev => nameWrap.addEventListener(ev, () => {
-    clearTimeout(pressTimer);
-    setTimeout(() => nameWrap.classList.remove('show-tooltip'), 1500);
-  }));
 
   const url = URL.createObjectURL(blob);
   const dl = document.createElement('a');
@@ -542,7 +536,7 @@ function addItem(file, blob, thumbSrc, newName, index, dateObj) {
   row.appendChild(remove);
   list.appendChild(row);
 
-  processed.push({ id, index, originalName: file.name, name: newName, blob, url, nameEl, tooltipEl, dlEl: dl, dateObj });
+  processed.push({ id, index, originalName: file.name, name: newName, blob, url, nameEl, dlEl: dl, dateObj, quality });
   updateBulkButtons();
 }
 
