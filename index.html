@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#161616">
+<title>JPG75 is Enough</title>
+<style>
+  :root {
+    --bg: #f4f4f2;
+    --surface: #ffffff;
+    --surface-2: #ececea;
+    --text: #1a1a1a;
+    --text-secondary: #5a5a58;
+    --border: #dcdcda;
+    --accent: #3b82f6;
+    --accent-text: #ffffff;
+    --danger: #d64545;
+  }
+  html[data-theme="dark"] {
+    --bg: #131313;
+    --surface: #1c1c1c;
+    --surface-2: #262626;
+    --text: #f0f0ee;
+    --text-secondary: #a3a39f;
+    --border: #333331;
+    --accent: #4f8cff;
+    --accent-text: #0a0a0a;
+    --danger: #ff6b6b;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 16px;
+    padding-bottom: 60px;
+    max-width: 640px;
+    margin: 0 auto;
+    transition: background .2s, color .2s;
+  }
+
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  h1 { font-size: 20px; font-weight: 700; margin: 0; }
+  .sub { color: var(--text-secondary); font-size: 13px; margin: 4px 0 20px; }
+
+  button.icon {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; width: 36px; height: 36px; font-size: 16px; cursor: pointer;
+  }
+
+  .drop {
+    border: 2px dashed var(--border); border-radius: 12px; padding: 28px 16px; text-align: center;
+    background: var(--surface); margin-bottom: 16px; cursor: pointer;
+  }
+  .drop.drag { border-color: var(--accent); background: var(--surface-2); }
+  .drop p { margin: 0; color: var(--text-secondary); font-size: 14px; }
+  .drop strong { color: var(--text); }
+  input[type=file] { display: none; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 12px;
+  }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row + .row { margin-top: 12px; }
+  label { font-size: 14px; }
+  .label-main { font-weight: 600; }
+
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  input[type=text], input[type=checkbox] { accent-color: var(--accent); }
+  input[type=text] {
+    flex: 1; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 8px 10px; font-size: 14px;
+  }
+  .qty-val { font-size: 14px; font-weight: 600; min-width: 40px; text-align: right; }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+
+  .preview {
+    font-size: 12px; color: var(--text-secondary); margin-top: 8px;
+    background: var(--surface-2); border-radius: 6px; padding: 6px 10px;
+    font-family: ui-monospace, monospace; word-break: break-all;
+  }
+
+  .item {
+    display: flex; align-items: center; gap: 10px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px;
+  }
+  .item img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
+  .item .info { flex: 1; min-width: 0; font-size: 12.5px; }
+  .item .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .sizes { color: var(--text-secondary); }
+  .item a.dl {
+    background: var(--accent); color: var(--accent-text); padding: 7px 12px; border-radius: 8px;
+    font-size: 12.5px; text-decoration: none; font-weight: 600; flex-shrink: 0;
+  }
+
+  button#allBtn {
+    width: 100%; background: var(--accent); color: var(--accent-text); border: none;
+    padding: 12px; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer;
+    margin-top: 4px; display: none;
+  }
+  button#allBtn:active { opacity: .85; }
+
+  footer { text-align: center; color: var(--text-secondary); font-size: 12px; margin-top: 24px; }
+
+  /* Modal */
+  .modal-bg {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5);
+    align-items: flex-end; justify-content: center; z-index: 10;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: var(--surface); color: var(--text); border-radius: 16px 16px 0 0;
+    padding: 20px; width: 100%; max-width: 640px; max-height: 80vh; overflow-y: auto;
+    border: 1px solid var(--border); border-bottom: none;
+  }
+  @media (min-width: 500px) {
+    .modal-bg { align-items: center; }
+    .modal { border-radius: 16px; border-bottom: 1px solid var(--border); }
+  }
+  .modal h2 { font-size: 16px; margin: 0 0 12px; }
+  .modal table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .modal td { padding: 4px 6px; vertical-align: top; }
+  .modal td:first-child { font-family: ui-monospace, monospace; color: var(--accent); white-space: nowrap; }
+  .modal .examples { margin-top: 14px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+  .modal .examples code { color: var(--text); }
+  .modal button.close {
+    width: 100%; margin-top: 16px; padding: 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); font-size: 14px; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>JPG75 is Enough</h1>
+  <button class="icon" id="themeToggle" title="Toggle theme">◐</button>
+</header>
+<p class="sub">Converts any image to a JPG at reduced quality — entirely in your browser. Nothing is uploaded.</p>
+
+<div class="drop" id="drop">
+  <p><strong>Tap to choose images</strong><br>or drag and drop them here</p>
+  <input type="file" id="fileInput" accept="image/*" multiple>
+</div>
+
+<div class="card">
+  <div class="row">
+    <label class="label-main" style="min-width:70px;">Quality</label>
+    <input type="range" id="quality" min="10" max="100" value="75">
+    <span class="qty-val" id="qualityLabel">75%</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="toggle-row">
+    <label class="label-main" for="renameEnabled">Rename files</label>
+    <input type="checkbox" id="renameEnabled">
+  </div>
+  <div id="renameFields" style="display:none; margin-top:12px;">
+    <div class="row">
+      <input type="text" id="pattern" placeholder="e.g. IMG_##### or *_compressed">
+      <button class="icon" id="infoBtn" title="Naming pattern help">i</button>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <label style="min-width:110px; color:var(--text-secondary); font-size:13px;">Folder name ($P)</label>
+      <input type="text" id="parentName" placeholder="images" value="images">
+    </div>
+    <div class="preview" id="preview">Example: image.png → image.jpg</div>
+  </div>
+</div>
+
+<div id="list"></div>
+<button id="allBtn">Download all as ZIP</button>
+
+<footer>JPG75 is Enough · v1.0.0</footer>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h2>Naming pattern placeholders</h2>
+    <table>
+      <tr><td>#</td><td>One digit of a sequential number (repeat for padding, e.g. ##### = 00032)</td></tr>
+      <tr><td>*</td><td>Original file name (without extension)</td></tr>
+      <tr><td>$P</td><td>Folder name, as entered above</td></tr>
+      <tr><td>$Y</td><td>Year (current, e.g. 2026)</td></tr>
+      <tr><td>$M</td><td>Month (e.g. 08)</td></tr>
+      <tr><td>$D</td><td>Day (e.g. 01)</td></tr>
+      <tr><td>$H</td><td>Hour</td></tr>
+      <tr><td>$N</td><td>Minute</td></tr>
+      <tr><td>$S</td><td>Second</td></tr>
+    </table>
+    <div class="examples">
+      <strong>Examples</strong><br>
+      <code>Image#####</code> → 32nd image becomes <code>Image00032.jpg</code><br>
+      <code>$P_#####</code> → with folder "ABC", 32nd image becomes <code>ABC_00032.jpg</code><br>
+      <code>$Y-$M-$D_#####</code> → 32nd image, processed today → <code>2026-08-01_00032.jpg</code><br>
+      <code>*_tn</code> → image named <code>John.png</code> becomes <code>John_tn.jpg</code>
+    </div>
+    <button class="close" id="closeModal">Close</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+// ---------- Theme ----------
+const root = document.documentElement;
+const themeToggle = document.getElementById('themeToggle');
+function setTheme(t) {
+  root.setAttribute('data-theme', t);
+  localStorage.setItem('jpg75-theme', t);
+  themeToggle.textContent = t === 'dark' ? '◐' : '◑';
+}
+setTheme(localStorage.getItem('jpg75-theme') || 'dark');
+themeToggle.addEventListener('click', () => {
+  setTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+});
+
+// ---------- Elements ----------
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const list = document.getElementById('list');
+const qualitySlider = document.getElementById('quality');
+const qualityLabel = document.getElementById('qualityLabel');
+const allBtn = document.getElementById('allBtn');
+const renameEnabled = document.getElementById('renameEnabled');
+const renameFields = document.getElementById('renameFields');
+const patternInput = document.getElementById('pattern');
+const parentNameInput = document.getElementById('parentName');
+const preview = document.getElementById('preview');
+const modalBg = document.getElementById('modalBg');
+const infoBtn = document.getElementById('infoBtn');
+const closeModal = document.getElementById('closeModal');
+
+let processed = [];
+let counter = 0;
+
+// ---------- Quality ----------
+qualitySlider.addEventListener('input', () => {
+  qualityLabel.textContent = qualitySlider.value + '%';
+});
+
+// ---------- Rename toggle ----------
+renameEnabled.addEventListener('change', () => {
+  renameFields.style.display = renameEnabled.checked ? 'block' : 'none';
+  updatePreview();
+});
+patternInput.addEventListener('input', updatePreview);
+parentNameInput.addEventListener('input', updatePreview);
+
+function pad(num, len) { return String(num).padStart(len, '0'); }
+
+function buildName(pattern, { index, originalBase, parent }) {
+  if (!pattern) return originalBase;
+  const now = new Date();
+  let out = pattern;
+  out = out.replace(/#+/g, (m) => pad(index, m.length));
+  out = out.replaceAll('*', originalBase);
+  out = out.replaceAll('$P', parent || 'images');
+  out = out.replaceAll('$Y', now.getFullYear());
+  out = out.replaceAll('$M', pad(now.getMonth() + 1, 2));
+  out = out.replaceAll('$D', pad(now.getDate(), 2));
+  out = out.replaceAll('$H', pad(now.getHours(), 2));
+  out = out.replaceAll('$N', pad(now.getMinutes(), 2));
+  out = out.replaceAll('$S', pad(now.getSeconds(), 2));
+  return out;
+}
+
+function updatePreview() {
+  if (!renameEnabled.checked) return;
+  const name = buildName(patternInput.value.trim(), {
+    index: 32, originalBase: 'image', parent: parentNameInput.value.trim() || 'images'
+  });
+  preview.textContent = `Example: image.png → ${name || 'image'}.jpg`;
+}
+updatePreview();
+
+// ---------- Modal ----------
+infoBtn.addEventListener('click', () => modalBg.classList.add('open'));
+closeModal.addEventListener('click', () => modalBg.classList.remove('open'));
+modalBg.addEventListener('click', (e) => { if (e.target === modalBg) modalBg.classList.remove('open'); });
+
+// ---------- Drag & drop / file picking ----------
+drop.addEventListener('click', () => fileInput.click());
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.add('drag');
+}));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.remove('drag');
+}));
+drop.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInput.value = ''; });
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+function handleFiles(files) {
+  const images = Array.from(files).filter(f => f.type.startsWith('image/'));
+  if (images.length === 0) {
+    alert('Please choose image files.');
+    return;
+  }
+  images.forEach(processFile);
+}
+
+function processFile(file) {
+  counter += 1;
+  const index = counter;
+  const quality = parseInt(qualitySlider.value) / 100;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      // flatten transparency onto white, since JPG has no alpha channel
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob((blob) => {
+        const originalBase = file.name.replace(/\.[^.]+$/, '');
+        let newBase = originalBase;
+        if (renameEnabled.checked) {
+          const pattern = patternInput.value.trim();
+          newBase = buildName(pattern, {
+            index, originalBase, parent: parentNameInput.value.trim() || 'images'
+          }) || originalBase;
+        }
+        const newName = newBase + '.jpg';
+        addItem(file, blob, e.target.result, newName);
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = () => alert(`Could not read "${file.name}" as an image.`);
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function addItem(file, blob, thumbSrc, newName) {
+  const row = document.createElement('div');
+  row.className = 'item';
+
+  const thumb = document.createElement('img');
+  thumb.src = thumbSrc;
+
+  const info = document.createElement('div');
+  info.className = 'info';
+  const savings = Math.round((1 - blob.size / file.size) * 100);
+  info.innerHTML = `<div class="name">${newName}</div>
+    <div class="sizes">${formatSize(file.size)} → ${formatSize(blob.size)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}</div>`;
+
+  const url = URL.createObjectURL(blob);
+  const dl = document.createElement('a');
+  dl.className = 'dl';
+  dl.href = url;
+  dl.download = newName;
+  dl.textContent = 'Save';
+
+  row.appendChild(thumb);
+  row.appendChild(info);
+  row.appendChild(dl);
+  list.appendChild(row);
+
+  processed.push({ name: newName, blob });
+  allBtn.style.display = processed.length > 1 ? 'block' : 'none';
+}
+
+allBtn.addEventListener('click', async () => {
+  const zip = new JSZip();
+  const usedNames = new Set();
+  processed.forEach(p => {
+    let name = p.name;
+    let i = 1;
+    while (usedNames.has(name)) {
+      name = p.name.replace(/\.jpg$/, `(${i}).jpg`);
+      i++;
+    }
+    usedNames.add(name);
+    zip.file(name, p.blob);
+  });
+  const content = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(content);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'jpg75.zip';
+  a.click();
+});
+</script>
+
+</body>
+</html>
