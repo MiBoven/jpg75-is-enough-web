@@ -176,7 +176,7 @@
 <div id="list"></div>
 <button id="allBtn">Download all as ZIP</button>
 
-<footer>JPG75 is Enough · v1.0.0</footer>
+<footer>JPG75 is Enough · v1.0.1</footer>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -353,7 +353,8 @@ function addItem(file, blob, thumbSrc, newName) {
   const info = document.createElement('div');
   info.className = 'info';
   const savings = Math.round((1 - blob.size / file.size) * 100);
-  info.innerHTML = `<div class="name">${newName}</div>
+  const nameLine = file.name === newName ? newName : `${file.name} → ${newName}`;
+  info.innerHTML = `<div class="name">${nameLine}</div>
     <div class="sizes">${formatSize(file.size)} → ${formatSize(blob.size)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}</div>`;
 
   const url = URL.createObjectURL(blob);
