@@ -92,8 +92,10 @@
   .item img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
   .item .info { flex: 1; min-width: 0; font-size: 12.5px; }
   .item .name {
-    font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    position: relative; width: fit-content; max-width: 100%;
+    font-weight: 600; position: relative; width: fit-content; max-width: 100%;
+  }
+  .item .name .text {
+    display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .item .name .tooltip {
     display: none; position: absolute; left: 0; top: 100%; margin-top: 4px;
@@ -192,7 +194,7 @@
   <button id="allBtn">Download all as ZIP</button>
 </div>
 
-<footer>JPG75 is Enough · v1.0.3</footer>
+<footer>JPG75 is Enough · v1.0.4</footer>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -200,17 +202,17 @@
     <table>
       <tr><td>#</td><td>One digit of a sequential number (repeat for padding, e.g. ##### = 00032)</td></tr>
       <tr><td>*</td><td>Original file name (without extension)</td></tr>
-      <tr><td>$Y</td><td>Year (current, e.g. 2026)</td></tr>
-      <tr><td>$M</td><td>Month (e.g. 08)</td></tr>
-      <tr><td>$D</td><td>Day (e.g. 01)</td></tr>
-      <tr><td>$H</td><td>Hour</td></tr>
-      <tr><td>$N</td><td>Minute</td></tr>
-      <tr><td>$S</td><td>Second</td></tr>
+      <tr><td>$Y</td><td>Year the photo was taken (or last modified, if unknown)</td></tr>
+      <tr><td>$M</td><td>Month, same source</td></tr>
+      <tr><td>$D</td><td>Day, same source</td></tr>
+      <tr><td>$H</td><td>Hour, same source</td></tr>
+      <tr><td>$N</td><td>Minute, same source</td></tr>
+      <tr><td>$S</td><td>Second, same source</td></tr>
     </table>
     <div class="examples">
       <strong>Examples</strong><br>
       <code>Image#####</code> → 32nd image becomes <code>Image00032.jpg</code><br>
-      <code>$Y-$M-$D_#####</code> → 32nd image, processed today → <code>2026-08-01_00032.jpg</code><br>
+      <code>$Y-$M-$D_#####</code> → 32nd image, taken 30.9.2004 → <code>2004-09-30_00032.jpg</code><br>
       <code>*_tn</code> → image named <code>John.png</code> becomes <code>John_tn.jpg</code>
     </div>
     <button class="close" id="closeModal">Close</button>
@@ -270,27 +272,27 @@ patternInput.addEventListener('input', () => {
 
 function pad(num, len) { return String(num).padStart(len, '0'); }
 
-function buildName(pattern, { index, originalBase }) {
+function buildName(pattern, { index, originalBase, dateObj }) {
   if (!pattern) return originalBase;
-  const now = new Date();
+  const d = dateObj || new Date();
   let out = pattern;
   out = out.replace(/#+/g, (m) => pad(index, m.length));
   out = out.replaceAll('*', originalBase);
-  out = out.replaceAll('$Y', now.getFullYear());
-  out = out.replaceAll('$M', pad(now.getMonth() + 1, 2));
-  out = out.replaceAll('$D', pad(now.getDate(), 2));
-  out = out.replaceAll('$H', pad(now.getHours(), 2));
-  out = out.replaceAll('$N', pad(now.getMinutes(), 2));
-  out = out.replaceAll('$S', pad(now.getSeconds(), 2));
+  out = out.replaceAll('$Y', d.getFullYear());
+  out = out.replaceAll('$M', pad(d.getMonth() + 1, 2));
+  out = out.replaceAll('$D', pad(d.getDate(), 2));
+  out = out.replaceAll('$H', pad(d.getHours(), 2));
+  out = out.replaceAll('$N', pad(d.getMinutes(), 2));
+  out = out.replaceAll('$S', pad(d.getSeconds(), 2));
   return out;
 }
 
-function computeName(originalName, index) {
+function computeName(originalName, index, dateObj) {
   const originalBase = originalName.replace(/\.[^.]+$/, '');
   let base = originalBase;
   if (renameEnabled.checked) {
     const pattern = patternInput.value.trim();
-    base = buildName(pattern, { index, originalBase }) || originalBase;
+    base = buildName(pattern, { index, originalBase, dateObj }) || originalBase;
   }
   return base + '.jpg';
 }
@@ -304,7 +306,7 @@ updatePreview();
 
 function updateAllNames() {
   processed.forEach(p => {
-    const newName = computeName(p.originalName, p.index);
+    const newName = computeName(p.originalName, p.index, p.dateObj);
     p.name = newName;
     p.nameEl.textContent = newName;
     p.tooltipEl.textContent = p.originalName;
@@ -343,31 +345,129 @@ function handleFiles(files) {
   images.forEach(processFile);
 }
 
-function processFile(file) {
+// ---------- Date reading: EXIF capture date, falling back to file date ----------
+function readBytes(view, offset, length) {
+  let s = '';
+  for (let i = 0; i < length; i++) s += String.fromCharCode(view.getUint8(offset + i));
+  return s;
+}
+
+function parseExifDateTime(view, tiffStart) {
+  const little = view.getUint16(tiffStart) === 0x4949;
+  const u16 = (o) => view.getUint16(o, little);
+  const u32 = (o) => view.getUint32(o, little);
+  if (u16(tiffStart + 2) !== 0x002A) return null;
+
+  const ifd0 = tiffStart + u32(tiffStart + 4);
+  const entries = u16(ifd0);
+  let dateStr = null;
+  let exifIFDOffset = null;
+
+  for (let i = 0; i < entries; i++) {
+    const e = ifd0 + 2 + i * 12;
+    const tag = u16(e);
+    if (tag === 0x8769) exifIFDOffset = u32(e + 8);
+    if (tag === 0x0132) dateStr = readBytes(view, tiffStart + u32(e + 8), 19);
+  }
+
+  if (exifIFDOffset) {
+    const exifIFD = tiffStart + exifIFDOffset;
+    const exifEntries = u16(exifIFD);
+    for (let i = 0; i < exifEntries; i++) {
+      const e = exifIFD + 2 + i * 12;
+      if (u16(e) === 0x9003) { // DateTimeOriginal
+        dateStr = readBytes(view, tiffStart + u32(e + 8), 19);
+        break;
+      }
+    }
+  }
+
+  if (!dateStr) return null;
+  const m = dateStr.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+}
+
+async function getExifDate(file) {
+  if (file.type !== 'image/jpeg' && file.type !== 'image/jpg') return null;
+  try {
+    const buf = await file.slice(0, 131072).arrayBuffer();
+    const view = new DataView(buf);
+    if (view.getUint16(0) !== 0xFFD8) return null;
+    let offset = 2;
+    while (offset < view.byteLength - 4) {
+      const marker = view.getUint16(offset);
+      if (marker === 0xFFE1) {
+        const segLength = view.getUint16(offset + 2);
+        if (readBytes(view, offset + 4, 4) === 'Exif') {
+          return parseExifDateTime(view, offset + 10);
+        }
+        offset += 2 + segLength;
+      } else if ((marker & 0xFF00) === 0xFF00) {
+        const segLength = view.getUint16(offset + 2);
+        offset += 2 + segLength;
+      } else {
+        break;
+      }
+    }
+  } catch (err) {
+    return null;
+  }
+  return null;
+}
+
+async function getFileDate(file) {
+  const exifDate = await getExifDate(file);
+  if (exifDate) return exifDate;
+  return new Date(file.lastModified);
+}
+
+// ---------- Small promise helpers ----------
+function readAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+async function processFile(file) {
   counter += 1;
   const index = counter;
   const quality = parseInt(qualitySlider.value) / 100;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      // flatten transparency onto white, since JPG has no alpha channel
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
-      canvas.toBlob((blob) => {
-        const newName = computeName(file.name, index);
-        addItem(file, blob, e.target.result, newName, index);
-      }, 'image/jpeg', quality);
-    };
-    img.onerror = () => alert(`Could not read "${file.name}" as an image.`);
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
+
+  const dateObj = await getFileDate(file);
+  let dataUrl, img;
+  try {
+    dataUrl = await readAsDataURL(file);
+    img = await loadImage(dataUrl);
+  } catch (err) {
+    alert(`Could not read "${file.name}" as an image.`);
+    return;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext('2d');
+  // flatten transparency onto white, since JPG has no alpha channel
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0);
+  canvas.toBlob((blob) => {
+    const newName = computeName(file.name, index, dateObj);
+    addItem(file, blob, dataUrl, newName, index, dateObj);
+  }, 'image/jpeg', quality);
 }
 
 function updateBulkButtons() {
@@ -376,7 +476,7 @@ function updateBulkButtons() {
   downloadAllBtn.style.display = show;
 }
 
-function addItem(file, blob, thumbSrc, newName, index) {
+function addItem(file, blob, thumbSrc, newName, index, dateObj) {
   const id = ++itemCounter;
   const row = document.createElement('div');
   row.className = 'item';
@@ -391,7 +491,9 @@ function addItem(file, blob, thumbSrc, newName, index) {
 
   const nameWrap = document.createElement('div');
   nameWrap.className = 'name';
+  nameWrap.title = file.name;
   const nameEl = document.createElement('span');
+  nameEl.className = 'text';
   nameEl.textContent = newName;
   const tooltipEl = document.createElement('span');
   tooltipEl.className = 'tooltip';
@@ -440,7 +542,7 @@ function addItem(file, blob, thumbSrc, newName, index) {
   row.appendChild(remove);
   list.appendChild(row);
 
-  processed.push({ id, index, originalName: file.name, name: newName, blob, url, nameEl, tooltipEl, dlEl: dl });
+  processed.push({ id, index, originalName: file.name, name: newName, blob, url, nameEl, tooltipEl, dlEl: dl, dateObj });
   updateBulkButtons();
 }
 

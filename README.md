@@ -16,10 +16,10 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
     |---|---|
     | `#` (repeatable) | Sequential number, padded to the number of `#` used (`#####` → `00032`) |
     | `*` | Original file name (without extension) |
-    | `$Y` `$M` `$D` | Current year / month / day |
-    | `$H` `$N` `$S` | Current hour / minute / second |
+    | `$Y` `$M` `$D` | Year / month / day the photo was taken (EXIF capture date), falling back to the file's last-modified date if no EXIF data is present |
+    | `$H` `$N` `$S` | Hour / minute / second, same source |
 
-    Example: `$Y-$M-$D_#####` → `2026-08-01_00032.jpg`
+    Example: `$Y-$M-$D_#####` → `2004-09-30_00032.jpg`
 - Only the new file name is shown in the list; hover (desktop) or long-press (mobile) to see the original name
 - Names update live in the list as you change the rename pattern
 - Remove individual images from the list before downloading
@@ -49,9 +49,14 @@ Images are read locally via the `FileReader` API, drawn onto an in-memory `<canv
 
 ## Browser support
 
-Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted.
+Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$H`/`$N`/`$S` placeholders only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead.
 
 ## Changelog
+
+### 1.0.4
+- Fixed the original-name tooltip being clipped/truncated by a CSS `overflow: hidden` on the wrong element, which made it display incorrectly
+- Added a native hover tooltip (desktop) via the `title` attribute as a fallback alongside the custom tooltip
+- `$Y` `$M` `$D` `$H` `$N` `$S` in rename patterns now use each photo's EXIF capture date/time when available (JPEGs only), falling back to the file's last-modified date otherwise — instead of always using the current time
 
 ### 1.0.3
 - Removed the unused folder name field and `$P` placeholder (no real folder access is possible from a mobile file picker)
