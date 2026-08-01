@@ -21,7 +21,8 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
     | `$H` `$N` `$S` | Current hour / minute / second |
 
     Example: `$Y-$M-$D_#####` → `2026-08-01_00032.jpg`
-- Download images individually, or all at once as a ZIP
+- Remove individual images from the list before downloading
+- Download images individually, all at once (separate files), or all at once as a ZIP
 - Dark mode by default, with a light mode toggle
 - Mobile-first layout — designed to be used from a phone
 - 100% client-side: no backend, no analytics, no image ever leaves the device
@@ -51,4 +52,4 @@ Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not native
 
 ## Version
 
-**1.0.1** — original filename is now shown alongside the converted name in the file list.
+**1.0.2** — images can now be removed from the list individually, and there's a "Download all" button for separate files in addition to the ZIP option.
