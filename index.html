@@ -91,7 +91,17 @@
   }
   .item img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
   .item .info { flex: 1; min-width: 0; font-size: 12.5px; }
-  .item .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .name {
+    font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    position: relative; width: fit-content; max-width: 100%;
+  }
+  .item .name .tooltip {
+    display: none; position: absolute; left: 0; top: 100%; margin-top: 4px;
+    background: var(--surface-2); color: var(--text-secondary); border: 1px solid var(--border);
+    padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 400;
+    white-space: nowrap; z-index: 5;
+  }
+  .item .name:hover .tooltip, .item .name.show-tooltip .tooltip { display: block; }
   .item .sizes { color: var(--text-secondary); }
   .item a.dl {
     background: var(--accent); color: var(--accent-text); padding: 7px 12px; border-radius: 8px;
@@ -172,10 +182,6 @@
       <input type="text" id="pattern" placeholder="e.g. IMG_##### or *_compressed">
       <button class="icon" id="infoBtn" title="Naming pattern help">i</button>
     </div>
-    <div class="row" style="margin-top:8px;">
-      <label style="min-width:110px; color:var(--text-secondary); font-size:13px;">Folder name ($P)</label>
-      <input type="text" id="parentName" placeholder="images" value="images">
-    </div>
     <div class="preview" id="preview">Example: image.png → image.jpg</div>
   </div>
 </div>
@@ -186,7 +192,7 @@
   <button id="allBtn">Download all as ZIP</button>
 </div>
 
-<footer>JPG75 is Enough · v1.0.0</footer>
+<footer>JPG75 is Enough · v1.0.3</footer>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -194,7 +200,6 @@
     <table>
       <tr><td>#</td><td>One digit of a sequential number (repeat for padding, e.g. ##### = 00032)</td></tr>
       <tr><td>*</td><td>Original file name (without extension)</td></tr>
-      <tr><td>$P</td><td>Folder name, as entered above</td></tr>
       <tr><td>$Y</td><td>Year (current, e.g. 2026)</td></tr>
       <tr><td>$M</td><td>Month (e.g. 08)</td></tr>
       <tr><td>$D</td><td>Day (e.g. 01)</td></tr>
@@ -205,7 +210,6 @@
     <div class="examples">
       <strong>Examples</strong><br>
       <code>Image#####</code> → 32nd image becomes <code>Image00032.jpg</code><br>
-      <code>$P_#####</code> → with folder "ABC", 32nd image becomes <code>ABC_00032.jpg</code><br>
       <code>$Y-$M-$D_#####</code> → 32nd image, processed today → <code>2026-08-01_00032.jpg</code><br>
       <code>*_tn</code> → image named <code>John.png</code> becomes <code>John_tn.jpg</code>
     </div>
@@ -239,7 +243,6 @@ const downloadAllBtn = document.getElementById('downloadAllBtn');
 const renameEnabled = document.getElementById('renameEnabled');
 const renameFields = document.getElementById('renameFields');
 const patternInput = document.getElementById('pattern');
-const parentNameInput = document.getElementById('parentName');
 const preview = document.getElementById('preview');
 const modalBg = document.getElementById('modalBg');
 const infoBtn = document.getElementById('infoBtn');
@@ -258,19 +261,21 @@ qualitySlider.addEventListener('input', () => {
 renameEnabled.addEventListener('change', () => {
   renameFields.style.display = renameEnabled.checked ? 'block' : 'none';
   updatePreview();
+  updateAllNames();
 });
-patternInput.addEventListener('input', updatePreview);
-parentNameInput.addEventListener('input', updatePreview);
+patternInput.addEventListener('input', () => {
+  updatePreview();
+  updateAllNames();
+});
 
 function pad(num, len) { return String(num).padStart(len, '0'); }
 
-function buildName(pattern, { index, originalBase, parent }) {
+function buildName(pattern, { index, originalBase }) {
   if (!pattern) return originalBase;
   const now = new Date();
   let out = pattern;
   out = out.replace(/#+/g, (m) => pad(index, m.length));
   out = out.replaceAll('*', originalBase);
-  out = out.replaceAll('$P', parent || 'images');
   out = out.replaceAll('$Y', now.getFullYear());
   out = out.replaceAll('$M', pad(now.getMonth() + 1, 2));
   out = out.replaceAll('$D', pad(now.getDate(), 2));
@@ -280,14 +285,32 @@ function buildName(pattern, { index, originalBase, parent }) {
   return out;
 }
 
+function computeName(originalName, index) {
+  const originalBase = originalName.replace(/\.[^.]+$/, '');
+  let base = originalBase;
+  if (renameEnabled.checked) {
+    const pattern = patternInput.value.trim();
+    base = buildName(pattern, { index, originalBase }) || originalBase;
+  }
+  return base + '.jpg';
+}
+
 function updatePreview() {
   if (!renameEnabled.checked) return;
-  const name = buildName(patternInput.value.trim(), {
-    index: 32, originalBase: 'image', parent: parentNameInput.value.trim() || 'images'
-  });
+  const name = buildName(patternInput.value.trim(), { index: 32, originalBase: 'image' });
   preview.textContent = `Example: image.png → ${name || 'image'}.jpg`;
 }
 updatePreview();
+
+function updateAllNames() {
+  processed.forEach(p => {
+    const newName = computeName(p.originalName, p.index);
+    p.name = newName;
+    p.nameEl.textContent = newName;
+    p.tooltipEl.textContent = p.originalName;
+    p.dlEl.download = newName;
+  });
+}
 
 // ---------- Modal ----------
 infoBtn.addEventListener('click', () => modalBg.classList.add('open'));
@@ -337,16 +360,8 @@ function processFile(file) {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
       canvas.toBlob((blob) => {
-        const originalBase = file.name.replace(/\.[^.]+$/, '');
-        let newBase = originalBase;
-        if (renameEnabled.checked) {
-          const pattern = patternInput.value.trim();
-          newBase = buildName(pattern, {
-            index, originalBase, parent: parentNameInput.value.trim() || 'images'
-          }) || originalBase;
-        }
-        const newName = newBase + '.jpg';
-        addItem(file, blob, e.target.result, newName);
+        const newName = computeName(file.name, index);
+        addItem(file, blob, e.target.result, newName, index);
       }, 'image/jpeg', quality);
     };
     img.onerror = () => alert(`Could not read "${file.name}" as an image.`);
@@ -361,7 +376,7 @@ function updateBulkButtons() {
   downloadAllBtn.style.display = show;
 }
 
-function addItem(file, blob, thumbSrc, newName) {
+function addItem(file, blob, thumbSrc, newName, index) {
   const id = ++itemCounter;
   const row = document.createElement('div');
   row.className = 'item';
@@ -373,9 +388,33 @@ function addItem(file, blob, thumbSrc, newName) {
   const info = document.createElement('div');
   info.className = 'info';
   const savings = Math.round((1 - blob.size / file.size) * 100);
-  const nameLine = file.name === newName ? newName : `${file.name} → ${newName}`;
-  info.innerHTML = `<div class="name">${nameLine}</div>
-    <div class="sizes">${formatSize(file.size)} → ${formatSize(blob.size)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}</div>`;
+
+  const nameWrap = document.createElement('div');
+  nameWrap.className = 'name';
+  const nameEl = document.createElement('span');
+  nameEl.textContent = newName;
+  const tooltipEl = document.createElement('span');
+  tooltipEl.className = 'tooltip';
+  tooltipEl.textContent = file.name;
+  nameWrap.appendChild(nameEl);
+  nameWrap.appendChild(tooltipEl);
+
+  const sizes = document.createElement('div');
+  sizes.className = 'sizes';
+  sizes.textContent = `${formatSize(file.size)} → ${formatSize(blob.size)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}`;
+
+  info.appendChild(nameWrap);
+  info.appendChild(sizes);
+
+  // long-press to reveal original name on touch devices
+  let pressTimer;
+  nameWrap.addEventListener('touchstart', () => {
+    pressTimer = setTimeout(() => nameWrap.classList.add('show-tooltip'), 400);
+  });
+  ['touchend', 'touchcancel'].forEach(ev => nameWrap.addEventListener(ev, () => {
+    clearTimeout(pressTimer);
+    setTimeout(() => nameWrap.classList.remove('show-tooltip'), 1500);
+  }));
 
   const url = URL.createObjectURL(blob);
   const dl = document.createElement('a');
@@ -401,7 +440,7 @@ function addItem(file, blob, thumbSrc, newName) {
   row.appendChild(remove);
   list.appendChild(row);
 
-  processed.push({ id, name: newName, blob, url });
+  processed.push({ id, index, originalName: file.name, name: newName, blob, url, nameEl, tooltipEl, dlEl: dl });
   updateBulkButtons();
 }
 

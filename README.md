@@ -16,11 +16,12 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
     |---|---|
     | `#` (repeatable) | Sequential number, padded to the number of `#` used (`#####` → `00032`) |
     | `*` | Original file name (without extension) |
-    | `$P` | Folder name, entered manually in the app |
     | `$Y` `$M` `$D` | Current year / month / day |
     | `$H` `$N` `$S` | Current hour / minute / second |
 
     Example: `$Y-$M-$D_#####` → `2026-08-01_00032.jpg`
+- Only the new file name is shown in the list; hover (desktop) or long-press (mobile) to see the original name
+- Names update live in the list as you change the rename pattern
 - Remove individual images from the list before downloading
 - Download images individually, all at once (separate files), or all at once as a ZIP
 - Dark mode by default, with a light mode toggle
@@ -50,6 +51,19 @@ Images are read locally via the `FileReader` API, drawn onto an in-memory `<canv
 
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted.
 
-## Version
+## Changelog
 
-**1.0.2** — images can now be removed from the list individually, and there's a "Download all" button for separate files in addition to the ZIP option.
+### 1.0.3
+- Removed the unused folder name field and `$P` placeholder (no real folder access is possible from a mobile file picker)
+- File list now shows only the new file name; hover (desktop) or long-press (mobile) reveals the original name as a tooltip
+- File names in the list now update live when the rename pattern is changed, without reprocessing the images
+
+### 1.0.2
+- Images can now be removed from the list individually
+- Added a "Download all" button for separate files, in addition to the existing "Download all as ZIP" option
+
+### 1.0.1
+- Original filename is now shown alongside the converted name in the file list
+
+### 1.0.0
+- Initial release
