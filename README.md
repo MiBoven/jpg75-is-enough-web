@@ -51,8 +51,4 @@ Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not native
 
 ## Version
 
-**1.0.0** — initial release.
-
-## License
-
-MIT
+**1.0.1** — original filename is now shown alongside the converted name in the file list.
