@@ -70,6 +70,10 @@
   }
   .segment button.active { background: var(--accent); color: var(--accent-text); }
   .segment-hint { font-size: 12px; color: var(--text-secondary); margin: -6px 0 16px; }
+  .processing-hint {
+    font-size: 12.5px; color: var(--text-secondary); text-align: center;
+    margin: 0 0 12px; padding: 8px; background: var(--surface-2); border-radius: 8px;
+  }
 
   .card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
@@ -116,7 +120,7 @@
   }
   .item button.remove:active { color: var(--danger); }
 
-  .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+  .btn-row { display: flex; gap: 8px; margin-top: 4px; margin-bottom: 16px; }
   .btn-row button {
     flex: 1; background: var(--accent); color: var(--accent-text); border: none;
     padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
@@ -207,10 +211,10 @@
   <button id="downloadAllBtn">Download all</button>
   <button id="allBtn">Download all as ZIP</button>
 </div>
-<p class="segment-hint" id="processingHint" style="display:none;"></p>
+<p class="processing-hint" id="processingHint" style="display:none;"></p>
 <div id="list"></div>
 
-<footer>JPG75 is Enough · v1.0.7</footer>
+<footer>JPG75 is Enough · v1.0.8</footer>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -337,10 +341,38 @@ updatePreview();
 
 function updateAllNames() {
   processed.forEach(p => {
-    const newName = computeName(p.originalName, p.index, p.dateObj, p.quality);
-    p.name = newName;
-    p.nameEl.textContent = newName;
-    p.dlEl.download = newName;
+    p.baseName = computeName(p.originalName, p.index, p.dateObj, p.quality);
+  });
+  resolveDuplicateNames();
+}
+
+// If several images end up with the same computed name (e.g. a pattern
+// without a sequential number, and two photos taken in the same second),
+// number them chronologically: first occurrence stays as-is, the rest get
+// "_1", "_2", ... inserted before the .jpg extension.
+function resolveDuplicateNames() {
+  const groups = {};
+  processed.forEach(p => {
+    (groups[p.baseName] ||= []).push(p);
+  });
+  Object.values(groups).forEach(group => {
+    if (group.length > 1) {
+      group.sort((a, b) => {
+        const at = a.dateObj ? a.dateObj.getTime() : 0;
+        const bt = b.dateObj ? b.dateObj.getTime() : 0;
+        return at !== bt ? at - bt : a.index - b.index;
+      });
+      group.forEach((p, i) => {
+        p.name = i === 0 ? p.baseName : p.baseName.replace(/\.jpg$/, `_${i}.jpg`);
+      });
+    } else {
+      group[0].name = group[0].baseName;
+    }
+  });
+  processed.forEach(p => {
+    p.nameEl.textContent = p.name;
+    p.nameEl.title = p.name;
+    p.dlEl.download = p.name;
   });
 }
 
@@ -524,8 +556,8 @@ async function processFile(file) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0);
   const blob = await canvasToBlob(canvas, quality);
-  const newName = computeName(file.name, index, dateObj, qualityPercent);
-  addItem(file, blob, dataUrl, newName, index, dateObj, qualityPercent);
+  const baseName = computeName(file.name, index, dateObj, qualityPercent);
+  addItem(file, blob, dataUrl, baseName, index, dateObj, qualityPercent);
 }
 
 function updateBulkButtons() {
@@ -534,7 +566,7 @@ function updateBulkButtons() {
   downloadAllBtn.style.display = show;
 }
 
-function addItem(file, blob, thumbSrc, newName, index, dateObj, quality) {
+function addItem(file, blob, thumbSrc, baseName, index, dateObj, quality) {
   const id = ++itemCounter;
   const row = document.createElement('div');
   row.className = 'item';
@@ -549,8 +581,8 @@ function addItem(file, blob, thumbSrc, newName, index, dateObj, quality) {
 
   const nameEl = document.createElement('div');
   nameEl.className = 'name';
-  nameEl.textContent = newName;
-  nameEl.title = newName;
+  nameEl.textContent = baseName;
+  nameEl.title = baseName;
 
   const sizes = document.createElement('div');
   sizes.className = 'sizes';
@@ -563,7 +595,7 @@ function addItem(file, blob, thumbSrc, newName, index, dateObj, quality) {
   const dl = document.createElement('a');
   dl.className = 'dl';
   dl.href = url;
-  dl.download = newName;
+  dl.download = baseName;
   dl.textContent = 'Save';
 
   const remove = document.createElement('button');
@@ -574,6 +606,7 @@ function addItem(file, blob, thumbSrc, newName, index, dateObj, quality) {
     URL.revokeObjectURL(url);
     row.remove();
     processed = processed.filter(p => p.id !== id);
+    resolveDuplicateNames();
     updateBulkButtons();
   });
 
@@ -583,7 +616,8 @@ function addItem(file, blob, thumbSrc, newName, index, dateObj, quality) {
   row.appendChild(remove);
   list.appendChild(row);
 
-  processed.push({ id, index, originalName: file.name, name: newName, blob, url, nameEl, dlEl: dl, dateObj, quality });
+  processed.push({ id, index, originalName: file.name, baseName, name: baseName, blob, url, nameEl, dlEl: dl, dateObj, quality });
+  resolveDuplicateNames();
   updateBulkButtons();
 }
 

@@ -27,6 +27,7 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
 
     Example: `*_$Q` → `picture.png` at 75% quality becomes `picture_75.jpg`
 - Names update live in the list as you change the rename pattern
+- If a rename pattern produces the same name for multiple images (e.g. no `#` counter and two photos taken in the same second), duplicates are numbered chronologically: the earliest keeps the plain name, later ones get `_1`, `_2`, ... inserted before `.jpg`
 - Remove individual images from the list before downloading
 - Download buttons ("Download all" / "Download all as ZIP") sit above the file list, images process and are converted **one at a time**, so large batches don't overload the browser on mobile
 - Dark mode by default, with a light mode toggle
@@ -57,6 +58,10 @@ Images are read locally via the `FileReader` API, drawn onto an in-memory `<canv
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead.
 
 ## Changelog
+
+### 1.0.8
+- Fixed the "Processing X of Y…" indicator overlapping the download buttons, and added spacing between the buttons and the file list below them
+- Duplicate file names (e.g. from a rename pattern without a `#` counter) are now automatically numbered — `_1`, `_2`, ... — ordered chronologically by capture/file date instead of colliding
 
 ### 1.0.7
 - Images are now processed **sequentially** instead of all in parallel — fixes freezes/timeouts on Android when selecting many photos at once, caused by decoding and re-encoding several full-resolution images simultaneously
