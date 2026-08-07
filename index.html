@@ -203,13 +203,14 @@
   </div>
 </div>
 
-<div id="list"></div>
 <div class="btn-row">
   <button id="downloadAllBtn">Download all</button>
   <button id="allBtn">Download all as ZIP</button>
 </div>
+<p class="segment-hint" id="processingHint" style="display:none;"></p>
+<div id="list"></div>
 
-<footer>JPG75 is Enough · v1.0.6</footer>
+<footer>JPG75 is Enough · v1.0.7</footer>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -380,13 +381,20 @@ function formatSize(bytes) {
   return (bytes / 1024 / 1024).toFixed(2) + ' MB';
 }
 
-function handleFiles(files) {
+const processingHint = document.getElementById('processingHint');
+
+async function handleFiles(files) {
   const images = Array.from(files).filter(f => f.type.startsWith('image/'));
   if (images.length === 0) {
     alert('Please choose image files.');
     return;
   }
-  images.forEach(processFile);
+  processingHint.style.display = 'block';
+  for (let i = 0; i < images.length; i++) {
+    processingHint.textContent = `Processing ${i + 1} of ${images.length}…`;
+    await processFile(images[i]);
+  }
+  processingHint.style.display = 'none';
 }
 
 // ---------- Date reading: EXIF capture date, falling back to file date ----------
@@ -485,6 +493,12 @@ function loadImage(src) {
   });
 }
 
+function canvasToBlob(canvas, quality) {
+  return new Promise((resolve) => {
+    canvas.toBlob(resolve, 'image/jpeg', quality);
+  });
+}
+
 async function processFile(file) {
   counter += 1;
   const index = counter;
@@ -509,10 +523,9 @@ async function processFile(file) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0);
-  canvas.toBlob((blob) => {
-    const newName = computeName(file.name, index, dateObj, qualityPercent);
-    addItem(file, blob, dataUrl, newName, index, dateObj, qualityPercent);
-  }, 'image/jpeg', quality);
+  const blob = await canvasToBlob(canvas, quality);
+  const newName = computeName(file.name, index, dateObj, qualityPercent);
+  addItem(file, blob, dataUrl, newName, index, dateObj, qualityPercent);
 }
 
 function updateBulkButtons() {

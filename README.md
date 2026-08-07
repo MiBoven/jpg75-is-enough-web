@@ -28,14 +28,14 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
     Example: `*_$Q` → `picture.png` at 75% quality becomes `picture_75.jpg`
 - Names update live in the list as you change the rename pattern
 - Remove individual images from the list before downloading
-- Download images individually, all at once (separate files), or all at once as a ZIP
+- Download buttons ("Download all" / "Download all as ZIP") sit above the file list, images process and are converted **one at a time**, so large batches don't overload the browser on mobile
 - Dark mode by default, with a light mode toggle
 - Mobile-first layout — designed to be used from a phone
 - 100% client-side: no backend, no analytics, no image ever leaves the device
 
 ## How it works
 
-Images are read locally via the `FileReader` API, drawn onto an in-memory `<canvas>`, and re-encoded with `canvas.toBlob(..., 'image/jpeg', quality)`. The resulting JPGs are offered as direct downloads via `URL.createObjectURL`, or bundled into a ZIP using [JSZip](https://stuk.github.io/jszip/) (loaded from a CDN).
+Images are read locally via the `FileReader` API, drawn onto an in-memory `<canvas>`, and re-encoded with `canvas.toBlob(..., 'image/jpeg', quality)`. Files are processed **sequentially, one after another** — not all at once — since decoding and re-encoding several full-resolution photos in parallel can overwhelm memory and CPU on phones, leading to a frozen or crashed tab. The resulting JPGs are offered as direct downloads via `URL.createObjectURL`, or bundled into a ZIP using [JSZip](https://stuk.github.io/jszip/) (loaded from a CDN).
 
 ## Deployment (Netlify)
 
@@ -57,6 +57,11 @@ Images are read locally via the `FileReader` API, drawn onto an in-memory `<canv
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead.
 
 ## Changelog
+
+### 1.0.7
+- Images are now processed **sequentially** instead of all in parallel — fixes freezes/timeouts on Android when selecting many photos at once, caused by decoding and re-encoding several full-resolution images simultaneously
+- A "Processing X of Y…" hint is shown while a batch is being converted
+- Moved the "Download all" and "Download all as ZIP" buttons above the file list instead of below it
 
 ### 1.0.6
 - Added a **Bilder / Dateien** toggle (default: Bilder) above the picker. "Dateien" switches the file input's `accept` attribute to `*/*`, which makes Android open its regular file browser (Storage Access Framework) instead of the anonymized photo picker — preserving real file names when picked from "Files"/"My Files"
