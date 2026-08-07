@@ -27,16 +27,17 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
 
     Example: `*_$Q` → `picture.png` at 75% quality becomes `picture_75.jpg`
 - Names update live in the list as you change the rename pattern
-- If a rename pattern produces the same name for multiple images (e.g. no `#` counter and two photos taken in the same second), duplicates are numbered chronologically: the earliest keeps the plain name, later ones get `_1`, `_2`, ... inserted before `.jpg`
-- Remove individual images from the list before downloading
-- Download buttons ("Download all" / "Download all as ZIP") sit above the file list, images process and are converted **one at a time**, so large batches don't overload the browser on mobile
+- If a rename pattern produces the same name for multiple images (e.g. no `#` counter and two photos taken close together), **every** image in that group is numbered chronologically — `_1`, `_2`, ... inserted before `.jpg` — using millisecond-precision EXIF capture time where available
+- Remove individual images from the list, or clear the whole list at once with **Clear all**
+- You're warned before an accidental page reload or navigation throws away unsaved progress
+- Download buttons ("Download all" / "Download all as ZIP") sit above the file list; images are converted **one at a time** using `createImageBitmap` and small real thumbnails, so large batches (hundreds of photos) don't run out of memory on mobile
 - Dark mode by default, with a light mode toggle
 - Mobile-first layout — designed to be used from a phone
 - 100% client-side: no backend, no analytics, no image ever leaves the device
 
 ## How it works
 
-Images are read locally via the `FileReader` API, drawn onto an in-memory `<canvas>`, and re-encoded with `canvas.toBlob(..., 'image/jpeg', quality)`. Files are processed **sequentially, one after another** — not all at once — since decoding and re-encoding several full-resolution photos in parallel can overwhelm memory and CPU on phones, leading to a frozen or crashed tab. The resulting JPGs are offered as direct downloads via `URL.createObjectURL`, or bundled into a ZIP using [JSZip](https://stuk.github.io/jszip/) (loaded from a CDN).
+Each file is decoded with `createImageBitmap()` (falling back to `FileReader` + `<img>` if unsupported), drawn onto an in-memory `<canvas>` at full resolution for the actual JPG output, and separately onto a small (≤64px) canvas for a lightweight list thumbnail — avoiding both the large base64 data URLs and the full-resolution `<img>` elements that previously caused out-of-memory crashes with large batches. Files are processed **sequentially, one after another**, since decoding and re-encoding several full-resolution photos in parallel can overwhelm memory and CPU on phones. The resulting JPGs are offered as direct downloads via `URL.createObjectURL`, or bundled into a ZIP using [JSZip](https://stuk.github.io/jszip/) (loaded from a CDN).
 
 ## Deployment (Netlify)
 
@@ -58,6 +59,12 @@ Images are read locally via the `FileReader` API, drawn onto an in-memory `<canv
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead.
 
 ## Changelog
+
+### 1.0.9
+- Fixed out-of-memory crashes when selecting large batches (e.g. 300 photos): images now decode via `createImageBitmap()` instead of base64 data URLs, and the list shows a small real thumbnail (≤64px) instead of the full-resolution image, cutting per-image memory use from several MB to a few KB
+- Added a **Clear all** button to reset the whole list at once, instead of removing images one by one
+- Added a warning before an accidental reload/navigation discards unsaved progress
+- Duplicate-name numbering now applies to **every** image sharing a name (not just the ones after the first), and uses millisecond-precision EXIF capture time (`SubSecTimeOriginal`) when available so photos taken within the same second still sort correctly
 
 ### 1.0.8
 - Fixed the "Processing X of Y…" indicator overlapping the download buttons, and added spacing between the buttons and the file list below them

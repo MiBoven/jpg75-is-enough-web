@@ -129,6 +129,13 @@
   .btn-row button:active { opacity: .85; }
   #downloadAllBtn { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 
+  #clearAllBtn {
+    width: 100%; background: none; border: 1px solid var(--border); color: var(--danger);
+    padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
+    margin-bottom: 16px; display: none;
+  }
+  #clearAllBtn:active { opacity: .7; }
+
   footer { text-align: center; color: var(--text-secondary); font-size: 12px; margin-top: 24px; }
 
   /* Modal */
@@ -211,10 +218,11 @@
   <button id="downloadAllBtn">Download all</button>
   <button id="allBtn">Download all as ZIP</button>
 </div>
+<button id="clearAllBtn">Clear all</button>
 <p class="processing-hint" id="processingHint" style="display:none;"></p>
 <div id="list"></div>
 
-<footer>JPG75 is Enough · v1.0.8</footer>
+<footer>JPG75 is Enough · v1.0.9</footer>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -265,6 +273,7 @@ const qualitySlider = document.getElementById('quality');
 const qualityLabel = document.getElementById('qualityLabel');
 const allBtn = document.getElementById('allBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
+const clearAllBtn = document.getElementById('clearAllBtn');
 const renameEnabled = document.getElementById('renameEnabled');
 const renameFields = document.getElementById('renameFields');
 const patternInput = document.getElementById('pattern');
@@ -277,6 +286,14 @@ const closeModal = document.getElementById('closeModal');
 let processed = [];
 let counter = 0;
 let itemCounter = 0;
+
+// Warn before an accidental reload/navigation throws away unsaved progress.
+window.addEventListener('beforeunload', (e) => {
+  if (processed.length > 0) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 // ---------- Quality ----------
 qualitySlider.addEventListener('input', () => {
@@ -347,9 +364,9 @@ function updateAllNames() {
 }
 
 // If several images end up with the same computed name (e.g. a pattern
-// without a sequential number, and two photos taken in the same second),
-// number them chronologically: first occurrence stays as-is, the rest get
-// "_1", "_2", ... inserted before the .jpg extension.
+// without a sequential number, and two photos taken close together),
+// every image in that group gets numbered chronologically: "_1", "_2", ...
+// inserted before the .jpg extension, based on capture/file time.
 function resolveDuplicateNames() {
   const groups = {};
   processed.forEach(p => {
@@ -363,7 +380,7 @@ function resolveDuplicateNames() {
         return at !== bt ? at - bt : a.index - b.index;
       });
       group.forEach((p, i) => {
-        p.name = i === 0 ? p.baseName : p.baseName.replace(/\.jpg$/, `_${i}.jpg`);
+        p.name = p.baseName.replace(/\.jpg$/, `_${i + 1}.jpg`);
       });
     } else {
       group[0].name = group[0].baseName;
@@ -454,14 +471,20 @@ function parseExifDateTime(view, tiffStart) {
     if (tag === 0x0132) dateStr = readBytes(view, tiffStart + u32(e + 8), 19);
   }
 
+  let subSecStr = null;
   if (exifIFDOffset) {
     const exifIFD = tiffStart + exifIFDOffset;
     const exifEntries = u16(exifIFD);
     for (let i = 0; i < exifEntries; i++) {
       const e = exifIFD + 2 + i * 12;
-      if (u16(e) === 0x9003) { // DateTimeOriginal
+      const tag = u16(e);
+      if (tag === 0x9003) { // DateTimeOriginal
         dateStr = readBytes(view, tiffStart + u32(e + 8), 19);
-        break;
+      }
+      if (tag === 0x9291) { // SubSecTimeOriginal — fractional seconds as ASCII digits
+        const count = u32(e + 4);
+        const valOffset = count <= 4 ? e + 8 : tiffStart + u32(e + 8);
+        subSecStr = readBytes(view, valOffset, count).replace(/\0+$/, '');
       }
     }
   }
@@ -469,7 +492,11 @@ function parseExifDateTime(view, tiffStart) {
   if (!dateStr) return null;
   const m = dateStr.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
   if (!m) return null;
-  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  const date = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  if (subSecStr && /^\d+$/.test(subSecStr)) {
+    date.setMilliseconds(Math.round(parseFloat('0.' + subSecStr) * 1000));
+  }
+  return date;
 }
 
 async function getExifDate(file) {
@@ -531,6 +558,26 @@ function canvasToBlob(canvas, quality) {
   });
 }
 
+// Decode the file into something drawable onto a canvas. createImageBitmap
+// avoids the ~33% memory overhead of a base64 data URL and decodes off the
+// main thread where supported — important when processing many large photos.
+// Falls back to the classic FileReader + <img> approach if unavailable.
+async function loadSource(file) {
+  if (window.createImageBitmap) {
+    try {
+      const bitmap = await createImageBitmap(file);
+      return { drawable: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
+    } catch (err) {
+      // fall through to the Image-based fallback below
+    }
+  }
+  const dataUrl = await readAsDataURL(file);
+  const img = await loadImage(dataUrl);
+  return { drawable: img, width: img.width, height: img.height, close: () => {} };
+}
+
+const THUMB_SIZE = 64;
+
 async function processFile(file) {
   counter += 1;
   const index = counter;
@@ -538,42 +585,57 @@ async function processFile(file) {
   const quality = qualityPercent / 100;
 
   const dateObj = await getFileDate(file);
-  let dataUrl, img;
+  let source;
   try {
-    dataUrl = await readAsDataURL(file);
-    img = await loadImage(dataUrl);
+    source = await loadSource(file);
   } catch (err) {
     alert(`Could not read "${file.name}" as an image.`);
     return;
   }
 
+  // Full-resolution canvas for the actual JPG output
   const canvas = document.createElement('canvas');
-  canvas.width = img.width;
-  canvas.height = img.height;
+  canvas.width = source.width;
+  canvas.height = source.height;
   const ctx = canvas.getContext('2d');
   // flatten transparency onto white, since JPG has no alpha channel
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, 0, 0);
+  ctx.drawImage(source.drawable, 0, 0);
   const blob = await canvasToBlob(canvas, quality);
+
+  // Small real thumbnail for the list — a few KB instead of several MB
+  const scale = Math.min(1, THUMB_SIZE / Math.max(source.width, source.height));
+  const tw = Math.max(1, Math.round(source.width * scale));
+  const th = Math.max(1, Math.round(source.height * scale));
+  const thumbCanvas = document.createElement('canvas');
+  thumbCanvas.width = tw;
+  thumbCanvas.height = th;
+  thumbCanvas.getContext('2d').drawImage(source.drawable, 0, 0, tw, th);
+  const thumbBlob = await canvasToBlob(thumbCanvas, 0.6);
+  const thumbUrl = URL.createObjectURL(thumbBlob);
+
+  source.close();
+
   const baseName = computeName(file.name, index, dateObj, qualityPercent);
-  addItem(file, blob, dataUrl, baseName, index, dateObj, qualityPercent);
+  addItem(file, blob, thumbUrl, baseName, index, dateObj, qualityPercent);
 }
 
 function updateBulkButtons() {
-  const show = processed.length > 1 ? 'block' : 'none';
-  allBtn.style.display = show;
-  downloadAllBtn.style.display = show;
+  const showBulk = processed.length > 1 ? 'block' : 'none';
+  allBtn.style.display = showBulk;
+  downloadAllBtn.style.display = showBulk;
+  clearAllBtn.style.display = processed.length > 0 ? 'block' : 'none';
 }
 
-function addItem(file, blob, thumbSrc, baseName, index, dateObj, quality) {
+function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality) {
   const id = ++itemCounter;
   const row = document.createElement('div');
   row.className = 'item';
   row.dataset.id = id;
 
   const thumb = document.createElement('img');
-  thumb.src = thumbSrc;
+  thumb.src = thumbUrl;
 
   const info = document.createElement('div');
   info.className = 'info';
@@ -604,6 +666,7 @@ function addItem(file, blob, thumbSrc, baseName, index, dateObj, quality) {
   remove.title = 'Remove';
   remove.addEventListener('click', () => {
     URL.revokeObjectURL(url);
+    URL.revokeObjectURL(thumbUrl);
     row.remove();
     processed = processed.filter(p => p.id !== id);
     resolveDuplicateNames();
@@ -616,10 +679,24 @@ function addItem(file, blob, thumbSrc, baseName, index, dateObj, quality) {
   row.appendChild(remove);
   list.appendChild(row);
 
-  processed.push({ id, index, originalName: file.name, baseName, name: baseName, blob, url, nameEl, dlEl: dl, dateObj, quality });
+  processed.push({ id, index, originalName: file.name, baseName, name: baseName, blob, url, thumbUrl, nameEl, dlEl: dl, dateObj, quality });
   resolveDuplicateNames();
   updateBulkButtons();
 }
+
+clearAllBtn.addEventListener('click', () => {
+  if (processed.length === 0) return;
+  if (!confirm(`Remove all ${processed.length} images from the list? This can't be undone.`)) return;
+  processed.forEach(p => {
+    URL.revokeObjectURL(p.url);
+    URL.revokeObjectURL(p.thumbUrl);
+  });
+  processed = [];
+  list.innerHTML = '';
+  counter = 0;
+  itemCounter = 0;
+  updateBulkButtons();
+});
 
 downloadAllBtn.addEventListener('click', () => {
   processed.forEach((p, i) => {
