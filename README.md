@@ -40,6 +40,12 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
 
 Each file is decoded with `createImageBitmap()` (falling back to `FileReader` + `<img>` if unsupported), drawn onto an in-memory `<canvas>` at full resolution for the actual JPG output, and separately onto a small (≤64px) canvas for a lightweight list thumbnail — avoiding both the large base64 data URLs and the full-resolution `<img>` elements that previously caused out-of-memory crashes with large batches. Files are processed by a small worker pool of **3 at a time** — enough to be noticeably faster than one-by-one, without the memory/CPU overload that full parallel processing caused on mobile. Since re-encoding through `canvas.toBlob()` strips all metadata, the app separately reads the raw EXIF (APP1) segment out of the original JPEG's bytes and splices it back into the newly encoded file, so capture date, camera info, etc. survive the compression. The resulting JPGs are offered as direct downloads via `URL.createObjectURL`, or bundled into a ZIP using [JSZip](https://stuk.github.io/jszip/) (loaded from a CDN).
 
+## Files
+
+- `index.html` — markup and app logic
+- `style.css` — all styling
+- Push both to the repo root; `index.html` links to `style.css` with a relative path
+
 ## Deployment (Netlify)
 
 1. Push this repository to GitHub.
@@ -71,6 +77,9 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.0.12
+- Moved all CSS out of the inline `<style>` block into a separate `style.css` file
 
 ### 1.0.11
 - EXIF metadata (capture date, camera model, ISO, aperture, GPS, etc.) is now preserved through conversion for JPEG sources that have it — previously `canvas.toBlob()` silently stripped all of it, so converted photos looked like they had no metadata or the wrong date in tools like Google Photos
