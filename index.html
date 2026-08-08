@@ -226,7 +226,7 @@
 <p class="processing-hint" id="processingHint" style="display:none;"></p>
 <div id="list"></div>
 
-<footer>JPG75 is Enough · v1.0.10</footer>
+<footer>JPG75 is Enough · v1.0.11</footer>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -554,6 +554,55 @@ async function getFileDate(file) {
   return new Date(file.lastModified);
 }
 
+// ---------- Preserve EXIF metadata through re-encoding ----------
+// canvas.toBlob() strips all metadata (capture date, camera model, etc).
+// We extract the original APP1/Exif segment's raw bytes from the source
+// JPEG and splice them back into the freshly encoded output.
+async function getExifSegment(file) {
+  if (file.type !== 'image/jpeg' && file.type !== 'image/jpg') return null;
+  try {
+    const headBuf = await file.slice(0, 16384).arrayBuffer();
+    const headView = new DataView(headBuf);
+    if (headView.getUint16(0) !== 0xFFD8) return null;
+    let offset = 2;
+    while (offset < headView.byteLength - 4) {
+      const marker = headView.getUint16(offset);
+      if (marker === 0xFFE1) {
+        const segLength = headView.getUint16(offset + 2); // includes the length field itself
+        if (readBytes(headView, offset + 4, 4) !== 'Exif') return null;
+        const totalLength = 2 + segLength; // marker + length field + payload
+        if (offset + totalLength <= headBuf.byteLength) {
+          return new Uint8Array(headBuf.slice(offset, offset + totalLength));
+        }
+        // segment extends beyond what we read (large thumbnail/maker notes) — fetch it fully
+        const fullBuf = await file.slice(offset, offset + totalLength).arrayBuffer();
+        return new Uint8Array(fullBuf);
+      } else if ((marker & 0xFF00) === 0xFF00) {
+        const segLength = headView.getUint16(offset + 2);
+        offset += 2 + segLength;
+      } else {
+        break;
+      }
+    }
+  } catch (err) {
+    return null;
+  }
+  return null;
+}
+
+async function insertExifSegment(blob, exifBytes) {
+  const buf = await blob.arrayBuffer();
+  const view = new DataView(buf);
+  if (view.getUint16(0) !== 0xFFD8) return blob; // not a valid JPEG, leave untouched
+  const soi = new Uint8Array(buf, 0, 2);
+  const rest = new Uint8Array(buf, 2);
+  const combined = new Uint8Array(2 + exifBytes.length + rest.length);
+  combined.set(soi, 0);
+  combined.set(exifBytes, 2);
+  combined.set(rest, 2 + exifBytes.length);
+  return new Blob([combined], { type: 'image/jpeg' });
+}
+
 // ---------- Small promise helpers ----------
 function readAsDataURL(file) {
   return new Promise((resolve, reject) => {
@@ -623,7 +672,14 @@ async function processFile(file) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(source.drawable, 0, 0);
-  const blob = await canvasToBlob(canvas, quality);
+  let blob = await canvasToBlob(canvas, quality);
+
+  // Re-encoding via canvas strips all metadata — put the original capture
+  // date, camera model, etc. back if the source had EXIF data.
+  const exifSegment = await getExifSegment(file);
+  if (exifSegment) {
+    blob = await insertExifSegment(blob, exifSegment);
+  }
 
   // Small real thumbnail for the list — a few KB instead of several MB
   const scale = Math.min(1, THUMB_SIZE / Math.max(source.width, source.height));
