@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <meta name="theme-color" content="#161616">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="icon" href="/favicon.ico">
 <title>JPG75 is Enough</title>
 <style>
   :root {
@@ -222,7 +226,7 @@
 <p class="processing-hint" id="processingHint" style="display:none;"></p>
 <div id="list"></div>
 
-<footer>JPG75 is Enough · v1.0.9</footer>
+<footer>JPG75 is Enough · v1.0.10</footer>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -432,6 +436,11 @@ function formatSize(bytes) {
 
 const processingHint = document.getElementById('processingHint');
 
+// A small worker pool: several images decode/encode at once (fast), but not
+// so many that memory/CPU get overwhelmed on mobile (which caused the
+// freezes/crashes in 1.0.6 and earlier).
+const CONCURRENCY = 3;
+
 async function handleFiles(files) {
   const images = Array.from(files).filter(f => f.type.startsWith('image/'));
   if (images.length === 0) {
@@ -439,10 +448,22 @@ async function handleFiles(files) {
     return;
   }
   processingHint.style.display = 'block';
-  for (let i = 0; i < images.length; i++) {
-    processingHint.textContent = `Processing ${i + 1} of ${images.length}…`;
-    await processFile(images[i]);
+  const total = images.length;
+  let completed = 0;
+  let nextIndex = 0;
+  processingHint.textContent = `Processing 0 of ${total}…`;
+
+  async function worker() {
+    while (nextIndex < images.length) {
+      const file = images[nextIndex++];
+      await processFile(file);
+      completed++;
+      processingHint.textContent = `Processing ${completed} of ${total}…`;
+    }
   }
+
+  const workerCount = Math.min(CONCURRENCY, images.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
   processingHint.style.display = 'none';
 }
 

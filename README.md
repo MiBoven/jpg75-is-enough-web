@@ -37,7 +37,7 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
 
 ## How it works
 
-Each file is decoded with `createImageBitmap()` (falling back to `FileReader` + `<img>` if unsupported), drawn onto an in-memory `<canvas>` at full resolution for the actual JPG output, and separately onto a small (≤64px) canvas for a lightweight list thumbnail — avoiding both the large base64 data URLs and the full-resolution `<img>` elements that previously caused out-of-memory crashes with large batches. Files are processed **sequentially, one after another**, since decoding and re-encoding several full-resolution photos in parallel can overwhelm memory and CPU on phones. The resulting JPGs are offered as direct downloads via `URL.createObjectURL`, or bundled into a ZIP using [JSZip](https://stuk.github.io/jszip/) (loaded from a CDN).
+Each file is decoded with `createImageBitmap()` (falling back to `FileReader` + `<img>` if unsupported), drawn onto an in-memory `<canvas>` at full resolution for the actual JPG output, and separately onto a small (≤64px) canvas for a lightweight list thumbnail — avoiding both the large base64 data URLs and the full-resolution `<img>` elements that previously caused out-of-memory crashes with large batches. Files are processed by a small worker pool of **3 at a time** — enough to be noticeably faster than one-by-one, without the memory/CPU overload that full parallel processing caused on mobile. The resulting JPGs are offered as direct downloads via `URL.createObjectURL`, or bundled into a ZIP using [JSZip](https://stuk.github.io/jszip/) (loaded from a CDN).
 
 ## Deployment (Netlify)
 
@@ -54,11 +54,26 @@ Each file is decoded with `createImageBitmap()` (falling back to `FileReader` + 
      - Value: `<your-site-name>.netlify.app`
    - Netlify provisions an HTTPS certificate automatically once DNS is verified.
 
+## Favicon
+
+`index.html` already references these files at the repo root (add them yourself — they aren't included):
+
+- `favicon.ico`
+- `favicon-16x16.png`
+- `favicon-32x32.png`
+- `apple-touch-icon.png` (180×180, used for "Add to Home Screen" on iOS)
+
+If any file is missing, browsers just silently skip it — nothing breaks, you'll just see a generic icon until they're added.
+
 ## Browser support
 
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead.
 
 ## Changelog
+
+### 1.0.10
+- Images are now processed with limited concurrency (3 at a time) instead of strictly one-by-one, speeding up large batches while staying within safe memory limits
+- Added favicon references (`favicon.ico`, 16×16, 32×32, and an Apple touch icon) to `index.html` — see [Favicon](#favicon) below for what files to add
 
 ### 1.0.9
 - Fixed out-of-memory crashes when selecting large batches (e.g. 300 photos): images now decode via `createImageBitmap()` instead of base64 data URLs, and the list shows a small real thumbnail (≤64px) instead of the full-resolution image, cutting per-image memory use from several MB to a few KB
