@@ -37,6 +37,10 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
 - 100% client-side: no backend, no analytics, no image ever leaves the device
 - Original EXIF metadata (capture date, camera model, ISO, aperture, GPS, etc.) is preserved through the JPG conversion when the source file has it — re-encoding via `canvas` normally strips all of this
 - Photo **orientation** is preserved correctly: the image is decoded with EXIF orientation already applied, and the copied-back orientation tag is reset to "normal" so viewers don't rotate an already-correct image a second time
+- **Export as other format** *(optional, separate from the main JPG output)*: convert the already-processed image (i.e. after the main Quality setting has been applied) to **PNG** or **WebP** instead
+  - **PNG** supports a simple color-key transparency: pick a color and a tolerance (0% = exact match only); matching pixels become transparent
+  - **WebP** has its own quality slider, independent of the main JPG quality
+  - Available via "Export all" / "Export all as ZIP" — the regular "Save" / "Download all" buttons always produce JPG
 
 ## How it works
 
@@ -66,6 +70,11 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.2.0 — 2026-09-06 — Explanatory intro text, home reload, PNG/WebP export
+- Added a short intro paragraph explaining what the app does, since the subtitle in the header is now just a tagline
+- Clicking the logo/title in the header now reloads the page (triggering the unsaved-progress warning if applicable), instead of just scrolling to the top
+- Added an optional **Export as other format** section: re-packages the already-processed JPG output as **PNG** (with simple color-key transparency: pick a color + tolerance) or **WebP** (own quality slider) — kept separate from the main "Save"/"Download all" flow, which always stays JPG
 
 ### 1.1.1 — 2026-09-06 — Logo in header, shorter subtitle
 - Added the app logo next to the title in the header; clicking the logo/title scrolls back to the top, matching the "brand as home link" convention used across the app suite

@@ -33,6 +33,8 @@
   </div>
 </header>
 
+<p class="intro">Converts any image to a JPG at reduced quality — entirely in your browser. Nothing is uploaded.</p>
+
 <div class="mobile-only">
   <div class="segment" id="sourceToggle">
     <button type="button" class="seg-btn active" data-mode="images">Bilder</button>
@@ -76,6 +78,40 @@
   </div>
 </div>
 
+<div class="card">
+  <label class="label-main">Export as other format <span class="opt">(optional)</span></label>
+  <p class="export-note">It's not always enough!</p>
+  <div class="segment" id="exportFormatToggle">
+    <button type="button" class="seg-btn active" data-format="png">PNG</button>
+    <button type="button" class="seg-btn" data-format="webp">WebP</button>
+  </div>
+
+  <div id="exportPngFields">
+    <div class="row" style="margin-top:10px;">
+      <label class="label-main" style="min-width:120px;">Transparent color</label>
+      <input type="color" id="exportColor" value="#ffffff">
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <label class="label-main" style="min-width:120px;">Tolerance</label>
+      <input type="range" id="exportTolerance" min="0" max="100" value="0">
+      <span class="qty-val" id="exportToleranceLabel">0%</span>
+    </div>
+  </div>
+
+  <div id="exportWebpFields" style="display:none; margin-top:10px;">
+    <div class="row">
+      <label class="label-main" style="min-width:70px;">Quality</label>
+      <input type="range" id="exportQuality" min="10" max="100" value="75">
+      <span class="qty-val" id="exportQualityLabel">75%</span>
+    </div>
+  </div>
+
+  <div class="btn-row" style="margin-top:14px;">
+    <button id="exportAllBtn">Export all</button>
+    <button id="exportZipBtn">Export all as ZIP</button>
+  </div>
+</div>
+
 <div class="btn-row">
   <button id="downloadAllBtn">Download all</button>
   <button id="allBtn">Download all as ZIP</button>
@@ -84,13 +120,13 @@
 <p class="processing-hint" id="processingHint" style="display:none;"></p>
 <div id="list"></div>
 
-<footer>JPG75 is Enough · v1.1.1</footer>
+<footer>JPG75 is Enough · v1.2.0</footer>
 
 <div class="modal-bg" id="modalAbout">
   <div class="modal">
     <h2>About</h2>
     <p><strong>JPG75 is Enough</strong></p>
-    <p class="muted">Version <span id="aboutVersion">1.1.1</span></p>
+    <p class="muted">Version <span id="aboutVersion">1.2.0</span></p>
     <p>Converts images to JPG at reduced quality — entirely in your browser. No files are ever uploaded to a server; everything happens locally on this device.</p>
     <p class="muted small">EXIF metadata (capture date, camera model, orientation, etc.) is preserved through the conversion when the source file has it.</p>
     <button class="close" data-close>Close</button>
@@ -139,7 +175,7 @@ themeToggle.addEventListener('click', () => {
 // ---------- Brand / home ----------
 const brandHome = document.getElementById('brandHome');
 function goHome() {
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.location.reload();
 }
 brandHome.addEventListener('click', goHome);
 brandHome.addEventListener('keydown', (e) => {
@@ -189,6 +225,16 @@ const qualityLabel = document.getElementById('qualityLabel');
 const allBtn = document.getElementById('allBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
+const exportFormatToggle = document.getElementById('exportFormatToggle');
+const exportPngFields = document.getElementById('exportPngFields');
+const exportWebpFields = document.getElementById('exportWebpFields');
+const exportColor = document.getElementById('exportColor');
+const exportTolerance = document.getElementById('exportTolerance');
+const exportToleranceLabel = document.getElementById('exportToleranceLabel');
+const exportQuality = document.getElementById('exportQuality');
+const exportQualityLabel = document.getElementById('exportQualityLabel');
+const exportAllBtn = document.getElementById('exportAllBtn');
+const exportZipBtn = document.getElementById('exportZipBtn');
 const renameEnabled = document.getElementById('renameEnabled');
 const renameFields = document.getElementById('renameFields');
 const patternInput = document.getElementById('pattern');
@@ -275,6 +321,133 @@ async function reencodeItem(p, quality, qualityPercent) {
   const savings = Math.round((1 - blob.size / p.originalSize) * 100);
   p.sizesEl.textContent = `${formatSize(p.originalSize)} → ${formatSize(blob.size)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}`;
 }
+
+// ---------- Export (PNG/WebP) settings ----------
+exportFormatToggle.addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg-btn');
+  if (!btn) return;
+  exportFormatToggle.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const isPng = btn.dataset.format === 'png';
+  exportPngFields.style.display = isPng ? 'block' : 'none';
+  exportWebpFields.style.display = isPng ? 'none' : 'block';
+});
+exportTolerance.addEventListener('input', () => {
+  exportToleranceLabel.textContent = exportTolerance.value + '%';
+});
+exportQuality.addEventListener('input', () => {
+  exportQualityLabel.textContent = exportQuality.value + '%';
+});
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// Makes pixels close to the chosen color transparent. Tolerance is a percent
+// of the maximum possible color distance (0% = exact match only).
+function applyColorKey(imageData, [tr, tg, tb], tolerancePercent) {
+  const maxDist = Math.sqrt(3 * 255 * 255);
+  const threshold = (tolerancePercent / 100) * maxDist;
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const dr = data[i] - tr, dg = data[i + 1] - tg, db = data[i + 2] - tb;
+    if (Math.sqrt(dr * dr + dg * dg + db * db) <= threshold) data[i + 3] = 0;
+  }
+}
+
+// Builds a PNG or WebP export from the already-converted JPG output (i.e.
+// after the main Quality setting has already been applied) — the export
+// feature is a re-packaging step, not an alternate path from the original.
+async function buildExportBlob(p, format) {
+  const source = await loadSource(p.blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(source.drawable, 0, 0);
+  source.close();
+
+  if (format === 'png') {
+    const tolerance = parseInt(exportTolerance.value);
+    const rgb = hexToRgb(exportColor.value);
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    applyColorKey(imgData, rgb, tolerance);
+    ctx.putImageData(imgData, 0, 0);
+    return canvasToBlob(canvas, undefined, 'image/png');
+  }
+  const quality = parseInt(exportQuality.value) / 100;
+  return canvasToBlob(canvas, quality, 'image/webp');
+}
+
+function exportName(p, format) {
+  return p.name.replace(/\.jpg$/, '.' + format);
+}
+
+async function runExport(format, onFile) {
+  const items = processed.slice();
+  const total = items.length;
+  let completed = 0;
+  let nextIndex = 0;
+  processingHint.style.display = 'block';
+  processingHint.textContent = `Exporting 0 of ${total}…`;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const p = items[nextIndex++];
+      const blob = await buildExportBlob(p, format);
+      onFile(exportName(p, format), blob);
+      completed++;
+      processingHint.textContent = `Exporting ${completed} of ${total}…`;
+    }
+  }
+
+  const workerCount = Math.min(CONCURRENCY, items.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  processingHint.style.display = 'none';
+}
+
+function currentExportFormat() {
+  return exportFormatToggle.querySelector('.seg-btn.active').dataset.format;
+}
+
+exportAllBtn.addEventListener('click', async () => {
+  const format = currentExportFormat();
+  let i = 0;
+  await runExport(format, (name, blob) => {
+    const url = URL.createObjectURL(blob);
+    setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }, i * 150);
+    i++;
+  });
+});
+
+exportZipBtn.addEventListener('click', async () => {
+  const format = currentExportFormat();
+  const zip = new JSZip();
+  const usedNames = new Set();
+  await runExport(format, (name, blob) => {
+    let finalName = name;
+    let i = 1;
+    while (usedNames.has(finalName)) {
+      finalName = name.replace(new RegExp(`\\.${format}$`), `(${i}).${format}`);
+      i++;
+    }
+    usedNames.add(finalName);
+    zip.file(finalName, blob);
+  });
+  const content = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(content);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `jpg75-${format}.zip`;
+  a.click();
+});
 
 // ---------- Rename toggle ----------
 renameEnabled.addEventListener('change', () => {
@@ -622,9 +795,9 @@ function loadImage(src) {
   });
 }
 
-function canvasToBlob(canvas, quality) {
+function canvasToBlob(canvas, quality, mime = 'image/jpeg') {
   return new Promise((resolve) => {
-    canvas.toBlob(resolve, 'image/jpeg', quality);
+    canvas.toBlob(resolve, mime, quality);
   });
 }
 
@@ -701,9 +874,12 @@ async function processFile(file) {
 
 function updateBulkButtons() {
   const showBulk = processed.length > 1 ? 'block' : 'none';
+  const showAny = processed.length > 0 ? 'block' : 'none';
   allBtn.style.display = showBulk;
   downloadAllBtn.style.display = showBulk;
-  clearAllBtn.style.display = processed.length > 0 ? 'block' : 'none';
+  clearAllBtn.style.display = showAny;
+  exportAllBtn.style.display = showAny;
+  exportZipBtn.style.display = showBulk;
 }
 
 function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality) {
