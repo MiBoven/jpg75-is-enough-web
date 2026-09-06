@@ -37,10 +37,12 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
 - 100% client-side: no backend, no analytics, no image ever leaves the device
 - Original EXIF metadata (capture date, camera model, ISO, aperture, GPS, etc.) is preserved through the JPG conversion when the source file has it — re-encoding via `canvas` normally strips all of this
 - Photo **orientation** is preserved correctly: the image is decoded with EXIF orientation already applied, and the copied-back orientation tag is reset to "normal" so viewers don't rotate an already-correct image a second time
-- **Export as other format** *(optional, separate from the main JPG output)*: convert the already-processed image (i.e. after the main Quality setting has been applied) to **PNG** or **WebP** instead
-  - **PNG** supports a simple color-key transparency: pick a color and a tolerance (0% = exact match only); matching pixels become transparent
-  - **WebP** has its own quality slider, independent of the main JPG quality
+- **Export as other format** *(accessible via the ⋮-menu → "Export", closable with the × in its corner)*: convert the already-processed image (i.e. after the main Quality setting has been applied) to **PNG** or **WebP** instead
+  - **PNG** supports a simple color-key transparency: pick a color and a tolerance (default 15%; 0% = exact match only)
+  - **WebP** reuses the main Quality slider — no separate quality control
   - Available via "Export all" / "Export all as ZIP" — the regular "Save" / "Download all" buttons always produce JPG
+- **Quality**, the export **transparent color**, and export **tolerance** are remembered across visits (`localStorage`); clicking a setting's label resets it to the default, shown with a small **•** marker whenever it's been changed from default
+- Tapping a thumbnail in the list opens it enlarged, making it easier to judge which color to pick for the export transparency
 
 ## How it works
 
@@ -70,6 +72,16 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.3.0 — 2026-09-06 — Export moved to menu, settings persistence, enlarge preview
+- The **Export** section is no longer always visible — it now opens via the ⋮-menu ("Export"), appears under "Rename files" as before, and can be closed again with an × in its top-right corner
+- The three settings cards (Quality, Rename files, Export) now have distinct HTML ids, making them easier to reference individually
+- Removed the "(optional)" label next to "Export as other format"
+- Renamed the export tagline to "JPG is not always enough!"
+- WebP export no longer has its own quality slider — it now reuses the main Quality slider
+- Tolerance default changed from 0% to 15%
+- Quality, export transparent color, and export tolerance are now saved in `localStorage` and restored on reload; clicking a setting's label resets it to default, with a small **•** marker shown when a value differs from default
+- Clicking a thumbnail in the list now opens an enlarged preview, making it easier to pick a transparency color from the image
 
 ### 1.2.0 — 2026-09-06 — Explanatory intro text, home reload, PNG/WebP export
 - Added a short intro paragraph explaining what the app does, since the subtitle in the header is now just a tagline
