@@ -6,7 +6,7 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
 
 ## Features
 
-- **Header** in the style of the other apps in the suite: bold title top-left with subtitle below, Vollbild (fullscreen) / Darkmode / ⋮-menu icons top-right. The ⋮-menu currently only holds "About" (name, version, short description, privacy note).
+- **Header** in the style of the other apps in the suite: app logo + bold title top-left with a short subtitle below, Vollbild (fullscreen) / Darkmode / ⋮-menu icons top-right. Clicking the logo/title area returns to the top of the page (kept consistent with the other apps in the suite, even though this one has no separate home view). The ⋮-menu currently only holds "About" (name, version, short description, privacy note).
 - Select or drag & drop one or multiple images (any browser-supported image format: PNG, WEBP, GIF, BMP, JPG, ...)
 - **Bilder / Dateien** toggle above the picker (default: **Bilder**), shown only on touch devices since it addresses an Android-specific picker quirk and isn't relevant on desktop:
   - **Bilder** uses the OS photo picker — quick to browse, but on Android the original file name is not preserved (the OS gives the browser an anonymized temporary name instead)
@@ -46,8 +46,9 @@ Each file is decoded with `createImageBitmap()` using `{ imageOrientation: 'from
 
 - `index.html` — markup and app logic
 - `style.css` — all styling
+- `logo.png` — app logo shown in the header
 - `netlify.toml` — base security headers for deployment (optional)
-- Push all files to the repo root; `index.html` links to `style.css` with a relative path
+- Push all files to the repo root; `index.html` links to `style.css` and `logo.png` with relative paths
 
 ## Favicon
 
@@ -65,6 +66,10 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.1.1 — 2026-09-06 — Logo in header, shorter subtitle
+- Added the app logo next to the title in the header; clicking the logo/title scrolls back to the top, matching the "brand as home link" convention used across the app suite
+- Subtitle shortened to "And enough is enough."
 
 ### 1.1.0 — 2026-09-06 — Header/menu redesign, orientation fix, live re-encode
 - New header matching the rest of the app suite: brand block top-left, Vollbild (fullscreen) / Darkmode / ⋮-menu icons top-right; the menu currently holds only "About"

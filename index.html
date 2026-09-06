@@ -14,9 +14,12 @@
 <body>
 
 <header>
-  <div class="brand">
-    <h1>JPG75 is Enough</h1>
-    <p class="sub">Converts any image to a JPG at reduced quality — entirely in your browser. Nothing is uploaded.</p>
+  <div class="brand" id="brandHome" title="Home" role="button" tabindex="0">
+    <img src="logo.png" alt="" class="brand-logo">
+    <div>
+      <h1>JPG75 is Enough</h1>
+      <p class="sub">And enough is enough.</p>
+    </div>
   </div>
   <div class="header-actions">
     <button class="icon" id="fullscreenToggle" title="Toggle fullscreen">⛶</button>
@@ -81,13 +84,13 @@
 <p class="processing-hint" id="processingHint" style="display:none;"></p>
 <div id="list"></div>
 
-<footer>JPG75 is Enough · v1.1.0</footer>
+<footer>JPG75 is Enough · v1.1.1</footer>
 
 <div class="modal-bg" id="modalAbout">
   <div class="modal">
     <h2>About</h2>
     <p><strong>JPG75 is Enough</strong></p>
-    <p class="muted">Version <span id="aboutVersion">1.1.0</span></p>
+    <p class="muted">Version <span id="aboutVersion">1.1.1</span></p>
     <p>Converts images to JPG at reduced quality — entirely in your browser. No files are ever uploaded to a server; everything happens locally on this device.</p>
     <p class="muted small">EXIF metadata (capture date, camera model, orientation, etc.) is preserved through the conversion when the source file has it.</p>
     <button class="close" data-close>Close</button>
@@ -131,6 +134,16 @@ function setTheme(t) {
 setTheme(localStorage.getItem('jpg75-theme') || 'dark');
 themeToggle.addEventListener('click', () => {
   setTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+});
+
+// ---------- Brand / home ----------
+const brandHome = document.getElementById('brandHome');
+function goHome() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+brandHome.addEventListener('click', goHome);
+brandHome.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); }
 });
 
 // ---------- Fullscreen ----------
