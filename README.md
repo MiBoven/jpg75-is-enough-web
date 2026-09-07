@@ -7,7 +7,9 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
 ## Features
 
 - **Header** in the style of the other apps in the suite: app logo + bold title top-left with a short subtitle below, Vollbild (fullscreen) / Darkmode / ⋮-menu icons top-right. Clicking the logo/title area returns to the top of the page (kept consistent with the other apps in the suite, even though this one has no separate home view). The ⋮-menu currently only holds "About" (name, version, short description, privacy note).
-- Select or drag & drop one or multiple images (any browser-supported image format: PNG, WEBP, GIF, BMP, JPG, ...)
+- Select or drag & drop one or multiple images (any browser-supported image format: PNG, WEBP, GIF, BMP, JPG, ...), or paste directly from the clipboard — e.g. a Windows screenshot copied via Snipping Tool / Win+Shift+S:
+  - **Desktop:** Ctrl+V / Cmd+V anywhere on the page
+  - **Mobile:** a dedicated "Paste image from clipboard" button (Ctrl+V has no mobile equivalent), e.g. after using "Copy to clipboard" on an Android screenshot's share sheet
 - **Bilder / Dateien** toggle above the picker (default: **Bilder**), shown only on touch devices since it addresses an Android-specific picker quirk and isn't relevant on desktop:
   - **Bilder** uses the OS photo picker — quick to browse, but on Android the original file name is not preserved (the OS gives the browser an anonymized temporary name instead)
   - **Dateien** opens the regular file browser instead — slower to navigate, but keeps the real file name if you pick it from "Files"/"My Files" rather than "Google Photos"
@@ -72,6 +74,11 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.4.0 — 2026-09-07 — Paste images from clipboard
+- Images can now be pasted directly from the clipboard — e.g. a Windows screenshot copied via Snipping Tool, or an Android screenshot's "Copy to clipboard" share option — and are processed exactly like a normal file selection
+- **Desktop:** Ctrl+V / Cmd+V anywhere on the page, plus a short hint below the picker (hidden on touch devices)
+- **Mobile:** a dedicated "Paste image from clipboard" button, since there's no keyboard shortcut equivalent — uses the async Clipboard API, which requires the tap as an explicit permission gesture
 
 ### 1.3.0 — 2026-09-06 — Export moved to menu, settings persistence, enlarge preview
 - The **Export** section is no longer always visible — it now opens via the ⋮-menu ("Export"), appears under "Rename files" as before, and can be closed again with an × in its top-right corner
