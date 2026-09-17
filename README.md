@@ -50,6 +50,12 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
   - **Pixel** mode: enter a width and/or height; with **Keep aspect ratio** on, the other side is calculated per image (each photo keeps its own proportions); with it off and both sides filled, choose **Zoom (crop)** to fill the exact box, or **Fit** to keep the whole image with the border filled in **White**, **Anthracite**, or a **blurred** copy of the image itself
   - Changing any resize setting re-encodes already-converted images in place, same as Quality
 - **Rotate**: tap a thumbnail to open it enlarged, then tap the enlarged image to rotate it 90° — confirmed with a small toast notification. Rotation is per-image and re-applied whenever Quality/Resize settings change afterward
+- Resize also offers a **Preset** mode, alongside Percent and Pixel:
+  - **Photo prints** (300 DPI): 9×13, 10×15, 11×15, 11×17, 13×18, 20×30 cm, and DIN A4
+  - **Aspect ratios** (no fixed size — computed from each image's own resolution): 1:1, 3:4, 4:3, 9:16, 16:9
+  - **Video/screen**: HD, Full HD, UHD/4K
+  - **Social media**: Instagram Post/Portrait/Story, Facebook/LinkedIn Post
+  - Every preset uses the same Zoom (crop) / Fit (white, anthracite, or blurred border) choice as the Pixel mode
 - **Reset all**: restores Quality, Resize, Rename, and Export settings (and every image's rotation) back to their defaults — the uploaded/converted images themselves stay in the list, unlike **Clear all**
 
 ## How it works
@@ -80,6 +86,13 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.6.0 — 2026-09-07 — Resize presets (photo prints, ratios, social media)
+- Added a third Resize mode, **Preset**, alongside Percent and Pixel:
+  - Photo print sizes in cm (9×13 through 20×30, plus DIN A4), converted to pixels at 300 DPI
+  - Pure aspect ratios (1:1, 3:4, 4:3, 9:16, 16:9) with no fixed size — the target box is computed from each image's own resolution, cropped to the largest inscribed box of that ratio, or fitted into the smallest box that fully contains it, depending on the Zoom/Fit choice
+  - Fixed video/screen sizes (HD, Full HD, UHD/4K) and common social media formats (Instagram Post/Portrait/Story, Facebook/LinkedIn Post)
+  - Reuses the same Zoom (crop) / Fit (white, anthracite, or blurred border) controls already used by the Pixel mode
 
 ### 1.5.0 — 2026-09-07 — Resize, rotate, and reset all
 - Added a **Resize images** card between Quality and Rename files: percent scaling (10–300%) or exact pixel dimensions, with a "Keep aspect ratio" toggle; when it's off and a fixed box doesn't match the source ratio, choose to crop-to-fill or fit-with-border (white, anthracite, or a blurred copy of the image as the border fill)
