@@ -45,6 +45,12 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
   - Available via "Export all" / "Export all as ZIP" — the regular "Save" / "Download all" buttons always produce JPG
 - **Quality**, the export **transparent color**, and export **tolerance** are remembered across visits (`localStorage`); clicking a setting's label resets it to the default, shown with a small **•** marker whenever it's been changed from default
 - Tapping a thumbnail in the list opens it enlarged, making it easier to judge which color to pick for the export transparency
+- **Resize images** *(optional, between Quality and Rename files)*:
+  - **Percent** mode: 10–300% of each image's own size (default 100%)
+  - **Pixel** mode: enter a width and/or height; with **Keep aspect ratio** on, the other side is calculated per image (each photo keeps its own proportions); with it off and both sides filled, choose **Zoom (crop)** to fill the exact box, or **Fit** to keep the whole image with the border filled in **White**, **Anthracite**, or a **blurred** copy of the image itself
+  - Changing any resize setting re-encodes already-converted images in place, same as Quality
+- **Rotate**: tap a thumbnail to open it enlarged, then tap the enlarged image to rotate it 90° — confirmed with a small toast notification. Rotation is per-image and re-applied whenever Quality/Resize settings change afterward
+- **Reset all**: restores Quality, Resize, Rename, and Export settings (and every image's rotation) back to their defaults — the uploaded/converted images themselves stay in the list, unlike **Clear all**
 
 ## How it works
 
@@ -74,6 +80,14 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.5.0 — 2026-09-07 — Resize, rotate, and reset all
+- Added a **Resize images** card between Quality and Rename files: percent scaling (10–300%) or exact pixel dimensions, with a "Keep aspect ratio" toggle; when it's off and a fixed box doesn't match the source ratio, choose to crop-to-fill or fit-with-border (white, anthracite, or a blurred copy of the image as the border fill)
+- Added per-image **rotation**: tap a thumbnail to enlarge it, then tap the enlarged image to rotate 90° (confirmed with a toast notification)
+- Added a **Reset all** button next to Clear all: resets every setting (Quality, Resize, Rename, Export, and each image's rotation) to default, without removing the uploaded images themselves
+- Refactored the image pipeline: resize, rotation, JPEG encoding, and EXIF re-insertion now share one function, always re-decoding from the original file rather than compounding loss on a previous JPG output — used for the initial conversion, live re-encodes, and rotation alike
+- The list thumbnail is now generated from the same (resized/rotated) output as the actual file, so it stays visually in sync
+- Fixed a memory-leak edge case: removing an image after it had been re-encoded (via Quality/Resize/Rotate changes) previously revoked its original, already-stale blob URL instead of the current one
 
 ### 1.4.0 — 2026-09-07 — Paste images from clipboard
 - Images can now be pasted directly from the clipboard — e.g. a Windows screenshot copied via Snipping Tool, or an Android screenshot's "Copy to clipboard" share option — and are processed exactly like a normal file selection

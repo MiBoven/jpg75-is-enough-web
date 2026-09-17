@@ -59,6 +59,56 @@
   </div>
 </div>
 
+<div class="card" id="resizeCard">
+  <div class="toggle-row">
+    <label class="label-main" for="resizeEnabled">Resize images</label>
+    <input type="checkbox" id="resizeEnabled">
+  </div>
+  <div id="resizeFields" style="display:none; margin-top:12px;">
+    <div class="segment" id="resizeModeToggle">
+      <button type="button" class="seg-btn active" data-mode="percent">Percent</button>
+      <button type="button" class="seg-btn" data-mode="pixel">Pixel</button>
+    </div>
+
+    <div id="resizePercentFields" style="margin-top:10px;">
+      <div class="row">
+        <label class="label-main resettable" id="resizePercentFieldLabel" style="min-width:70px;" title="Click to reset to default">Scale</label>
+        <input type="range" id="resizePercent" min="10" max="300" value="100">
+        <span class="qty-val" id="resizePercentLabel">100%</span>
+      </div>
+    </div>
+
+    <div id="resizePixelFields" style="display:none; margin-top:10px;">
+      <div class="row">
+        <input type="number" id="resizeWidth" placeholder="Width (px)" min="1">
+        <span class="muted">×</span>
+        <input type="number" id="resizeHeight" placeholder="Height (px)" min="1">
+      </div>
+      <div class="toggle-row" style="margin-top:8px;">
+        <label for="resizeLockRatio">Keep aspect ratio</label>
+        <input type="checkbox" id="resizeLockRatio" checked>
+      </div>
+      <p class="muted small" id="resizeLockHint">Fill in width and/or height — the other side is calculated to keep the image's own proportions.</p>
+
+      <div id="resizeFitFields" style="display:none; margin-top:6px;">
+        <label class="label-main">If the ratio doesn't match</label>
+        <div class="segment" id="resizeFitToggle">
+          <button type="button" class="seg-btn active" data-fit="crop">Zoom (crop)</button>
+          <button type="button" class="seg-btn" data-fit="fit">Fit (fill border)</button>
+        </div>
+        <div id="resizeFillFields" style="margin-top:8px;">
+          <label class="label-main">Border fill</label>
+          <div class="segment" id="resizeFillToggle">
+            <button type="button" class="seg-btn active" data-fill="white">White</button>
+            <button type="button" class="seg-btn" data-fill="black">Anthracite</button>
+            <button type="button" class="seg-btn" data-fill="blur">Blurred</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="card" id="renameCard">
   <div class="toggle-row">
     <label class="label-main" for="renameEnabled">Rename files</label>
@@ -118,11 +168,16 @@
   <button id="downloadAllBtn">Download all</button>
   <button id="allBtn">Download all as ZIP</button>
 </div>
-<button id="clearAllBtn">Clear all</button>
+<div class="btn-row">
+  <button id="resetAllBtn">Reset all</button>
+  <button id="clearAllBtn">Clear all</button>
+</div>
 <p class="processing-hint" id="processingHint" style="display:none;"></p>
 <div id="list"></div>
 
-<footer>JPG75 is Enough · v1.4.0</footer>
+<div class="toast" id="toast"></div>
+
+<footer>JPG75 is Enough · v1.5.0</footer>
 
 <div class="modal-bg" id="modalImagePreview">
   <div class="modal image-preview-modal">
@@ -131,6 +186,7 @@
       <button class="icon" id="closeImagePreview" title="Close">×</button>
     </div>
     <img id="previewImageEl" src="" alt="Enlarged preview">
+    <p class="muted small" style="text-align:center; margin-top:8px;">Tap the image to rotate it 90°</p>
   </div>
 </div>
 
@@ -138,7 +194,7 @@
   <div class="modal">
     <h2>About</h2>
     <p><strong>JPG75 is Enough</strong></p>
-    <p class="muted">Version <span id="aboutVersion">1.4.0</span></p>
+    <p class="muted">Version <span id="aboutVersion">1.5.0</span></p>
     <p>Converts images to JPG at reduced quality — entirely in your browser. No files are ever uploaded to a server; everything happens locally on this device.</p>
     <p class="muted small">EXIF metadata (capture date, camera model, orientation, etc.) is preserved through the conversion when the source file has it.</p>
     <button class="close" data-close>Close</button>
@@ -231,15 +287,35 @@ exportCloseBtn.addEventListener('click', () => {
   exportCard.style.display = 'none';
 });
 
-// ---------- Enlarged image preview ----------
+// ---------- Toast ----------
+let toastTimer;
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+// ---------- Enlarged image preview + rotate ----------
 const modalImagePreview = document.getElementById('modalImagePreview');
 const previewImageEl = document.getElementById('previewImageEl');
 const closeImagePreview = document.getElementById('closeImagePreview');
-function openImagePreview(url) {
-  previewImageEl.src = url;
+let currentPreviewId = null;
+function openImagePreview(id) {
+  currentPreviewId = id;
+  const p = processed.find(x => x.id === id);
+  if (!p) return;
+  previewImageEl.src = p.url;
   modalImagePreview.classList.add('open');
 }
 closeImagePreview.addEventListener('click', () => modalImagePreview.classList.remove('open'));
+previewImageEl.addEventListener('click', async () => {
+  const p = processed.find(x => x.id === currentPreviewId);
+  if (!p) return;
+  await rotateItem(p);
+  previewImageEl.src = p.url;
+  showToast('Image rotated');
+});
 document.querySelectorAll('[data-close]').forEach(btn => {
   btn.addEventListener('click', () => btn.closest('.modal-bg').classList.remove('open'));
 });
@@ -258,6 +334,22 @@ const qualityLabel = document.getElementById('qualityLabel');
 const allBtn = document.getElementById('allBtn');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
+const resetAllBtn = document.getElementById('resetAllBtn');
+const resizeEnabled = document.getElementById('resizeEnabled');
+const resizeFields = document.getElementById('resizeFields');
+const resizeModeToggle = document.getElementById('resizeModeToggle');
+const resizePercentFields = document.getElementById('resizePercentFields');
+const resizePixelFields = document.getElementById('resizePixelFields');
+const resizePercent = document.getElementById('resizePercent');
+const resizePercentLabel = document.getElementById('resizePercentLabel');
+const resizeWidth = document.getElementById('resizeWidth');
+const resizeHeight = document.getElementById('resizeHeight');
+const resizeLockRatio = document.getElementById('resizeLockRatio');
+const resizeFitFields = document.getElementById('resizeFitFields');
+const resizeFitToggle = document.getElementById('resizeFitToggle');
+const resizeFillFields = document.getElementById('resizeFillFields');
+const resizeFillToggle = document.getElementById('resizeFillToggle');
+const toastEl = document.getElementById('toast');
 const exportFormatToggle = document.getElementById('exportFormatToggle');
 const exportPngFields = document.getElementById('exportPngFields');
 const exportWebpFields = document.getElementById('exportWebpFields');
@@ -294,12 +386,56 @@ qualitySlider.addEventListener('input', () => {
 // every 'input' tick while dragging, since that would re-run the whole
 // batch dozens of times per second.
 qualitySlider.addEventListener('change', () => {
-  if (processed.length > 0) reprocessQuality();
+  if (processed.length > 0) reprocessAll();
 });
 
-async function reprocessQuality() {
-  const qualityPercent = parseInt(qualitySlider.value);
-  const quality = qualityPercent / 100;
+// ---------- Resize ----------
+resizeEnabled.addEventListener('change', () => {
+  resizeFields.style.display = resizeEnabled.checked ? 'block' : 'none';
+  if (processed.length > 0) reprocessAll();
+});
+resizeModeToggle.addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg-btn');
+  if (!btn) return;
+  resizeModeToggle.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const isPercent = btn.dataset.mode === 'percent';
+  resizePercentFields.style.display = isPercent ? 'block' : 'none';
+  resizePixelFields.style.display = isPercent ? 'none' : 'block';
+  if (processed.length > 0) reprocessAll();
+});
+resizePercent.addEventListener('input', () => {
+  resizePercentLabel.textContent = resizePercent.value + '%';
+});
+resizePercent.addEventListener('change', () => {
+  if (processed.length > 0) reprocessAll();
+});
+function updateResizeFitVisibility() {
+  resizeFitFields.style.display = resizeLockRatio.checked ? 'none' : 'block';
+}
+resizeLockRatio.addEventListener('change', () => {
+  updateResizeFitVisibility();
+  if (processed.length > 0) reprocessAll();
+});
+updateResizeFitVisibility();
+resizeWidth.addEventListener('change', () => { if (processed.length > 0) reprocessAll(); });
+resizeHeight.addEventListener('change', () => { if (processed.length > 0) reprocessAll(); });
+resizeFitToggle.addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg-btn');
+  if (!btn) return;
+  resizeFitToggle.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (processed.length > 0) reprocessAll();
+});
+resizeFillToggle.addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg-btn');
+  if (!btn) return;
+  resizeFillToggle.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (processed.length > 0) reprocessAll();
+});
+
+async function reprocessAll() {
   const items = processed.slice();
   const total = items.length;
   let completed = 0;
@@ -310,7 +446,7 @@ async function reprocessQuality() {
   async function worker() {
     while (nextIndex < items.length) {
       const p = items[nextIndex++];
-      await reencodeItem(p, quality, qualityPercent);
+      await reencodeItem(p);
       completed++;
       processingHint.textContent = `Re-encoding ${completed} of ${total}…`;
     }
@@ -322,35 +458,28 @@ async function reprocessQuality() {
   processingHint.style.display = 'none';
 }
 
-async function reencodeItem(p, quality, qualityPercent) {
-  let source;
+async function reencodeItem(p) {
+  let output;
   try {
-    source = await loadSource(p.file);
+    output = await buildOutput(p.file, p.rotation);
   } catch (err) {
     return; // leave the existing blob untouched if the file can't be re-read
   }
-  const canvas = document.createElement('canvas');
-  canvas.width = source.width;
-  canvas.height = source.height;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(source.drawable, 0, 0);
-  let blob = await canvasToBlob(canvas, quality);
-  const exifSegment = await getExifSegment(p.file);
-  if (exifSegment) {
-    patchOrientation(exifSegment);
-    blob = await insertExifSegment(blob, exifSegment);
-  }
-  source.close();
-
   URL.revokeObjectURL(p.url);
-  p.blob = blob;
-  p.url = URL.createObjectURL(blob);
-  p.quality = qualityPercent;
+  URL.revokeObjectURL(p.thumbUrl);
+  p.blob = output.blob;
+  p.url = URL.createObjectURL(output.blob);
+  p.thumbUrl = URL.createObjectURL(output.thumbBlob);
+  p.quality = parseInt(qualitySlider.value);
   p.dlEl.href = p.url;
-  const savings = Math.round((1 - blob.size / p.originalSize) * 100);
-  p.sizesEl.textContent = `${formatSize(p.originalSize)} → ${formatSize(blob.size)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}`;
+  p.thumbEl.src = p.thumbUrl;
+  const savings = Math.round((1 - output.blob.size / p.originalSize) * 100);
+  p.sizesEl.textContent = `${formatSize(p.originalSize)} → ${formatSize(output.blob.size)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}`;
+}
+
+async function rotateItem(p) {
+  p.rotation = (p.rotation + 90) % 360;
+  await reencodeItem(p);
 }
 
 // ---------- Export (PNG/WebP) settings ----------
@@ -410,6 +539,14 @@ setupPersistedControl({
   inputEl: exportTolerance,
   labelEl: document.getElementById('exportToleranceFieldLabel'),
   onApply: () => { exportToleranceLabel.textContent = exportTolerance.value + '%'; }
+});
+setupPersistedControl({
+  storageKey: 'jpg75-resizePercent',
+  defaultValue: 100,
+  inputEl: resizePercent,
+  labelEl: document.getElementById('resizePercentFieldLabel'),
+  onApply: () => { resizePercentLabel.textContent = resizePercent.value + '%'; },
+  fireChangeOnReset: true
 });
 
 function hexToRgb(hex) {
@@ -940,56 +1077,158 @@ async function loadSource(file) {
 }
 
 const THUMB_SIZE = 64;
+const ANTHRACITE = '#2b2b2b';
 
-async function processFile(file) {
-  counter += 1;
-  const index = counter;
-  const qualityPercent = parseInt(qualitySlider.value);
-  const quality = qualityPercent / 100;
+// ---------- Resize ----------
+function computeResizeTarget(srcW, srcH) {
+  if (!resizeEnabled.checked) return null;
+  const mode = resizeModeToggle.querySelector('.seg-btn.active').dataset.mode;
 
-  const dateObj = await getFileDate(file);
-  let source;
-  try {
-    source = await loadSource(file);
-  } catch (err) {
-    alert(`Could not read "${file.name}" as an image.`);
-    return;
+  if (mode === 'percent') {
+    const pct = parseInt(resizePercent.value) / 100;
+    return { w: Math.max(1, Math.round(srcW * pct)), h: Math.max(1, Math.round(srcH * pct)), fit: 'scale' };
   }
 
-  // Full-resolution canvas for the actual JPG output
-  const canvas = document.createElement('canvas');
-  canvas.width = source.width;
-  canvas.height = source.height;
-  const ctx = canvas.getContext('2d');
-  // flatten transparency onto white, since JPG has no alpha channel
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(source.drawable, 0, 0);
-  let blob = await canvasToBlob(canvas, quality);
+  const wIn = parseInt(resizeWidth.value) || null;
+  const hIn = parseInt(resizeHeight.value) || null;
 
-  // Re-encoding via canvas strips all metadata — put the original capture
-  // date, camera model, etc. back if the source had EXIF data.
+  if (resizeLockRatio.checked) {
+    if (wIn && hIn) {
+      const scale = Math.min(wIn / srcW, hIn / srcH);
+      return { w: Math.max(1, Math.round(srcW * scale)), h: Math.max(1, Math.round(srcH * scale)), fit: 'scale' };
+    }
+    if (wIn) return { w: wIn, h: Math.max(1, Math.round(srcH * (wIn / srcW))), fit: 'scale' };
+    if (hIn) return { w: Math.max(1, Math.round(srcW * (hIn / srcH))), h: hIn, fit: 'scale' };
+    return null;
+  }
+
+  if (!wIn || !hIn) return null; // an exact box needs both sides when ratio isn't locked
+  const fitMode = resizeFitToggle.querySelector('.seg-btn.active').dataset.fit; // 'crop' | 'fit'
+  const fillMode = resizeFillToggle.querySelector('.seg-btn.active').dataset.fill; // 'white' | 'black' | 'blur'
+  return { w: wIn, h: hIn, fit: fitMode === 'crop' ? 'cover' : 'contain', fill: fillMode };
+}
+
+function buildResizedCanvas(source) {
+  const target = computeResizeTarget(source.width, source.height);
+  const canvas = document.createElement('canvas');
+
+  if (!target) {
+    canvas.width = source.width;
+    canvas.height = source.height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(source.drawable, 0, 0);
+    return canvas;
+  }
+
+  canvas.width = target.w;
+  canvas.height = target.h;
+  const ctx = canvas.getContext('2d');
+
+  if (target.fit === 'scale') {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(source.drawable, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  if (target.fit === 'cover') {
+    // Center-crop the source to the target's aspect ratio, then scale to fill it exactly.
+    const srcRatio = source.width / source.height;
+    const dstRatio = target.w / target.h;
+    let sx, sy, sw, sh;
+    if (srcRatio > dstRatio) {
+      sh = source.height; sw = sh * dstRatio; sy = 0; sx = (source.width - sw) / 2;
+    } else {
+      sw = source.width; sh = sw / dstRatio; sx = 0; sy = (source.height - sh) / 2;
+    }
+    ctx.drawImage(source.drawable, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  // 'contain': the whole image fits inside the target box; the leftover border gets filled.
+  const scale = Math.min(target.w / source.width, target.h / source.height);
+  const dw = source.width * scale, dh = source.height * scale;
+  const dx = (target.w - dw) / 2, dy = (target.h - dh) / 2;
+
+  if (target.fill === 'blur') {
+    ctx.save();
+    ctx.filter = 'blur(24px)';
+    const bgScale = Math.max(target.w / source.width, target.h / source.height) * 1.1;
+    const bw = source.width * bgScale, bh = source.height * bgScale;
+    ctx.drawImage(source.drawable, (target.w - bw) / 2, (target.h - bh) / 2, bw, bh);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = target.fill === 'black' ? ANTHRACITE : '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  ctx.drawImage(source.drawable, dx, dy, dw, dh);
+  return canvas;
+}
+
+// ---------- Rotation ----------
+// Applied as a final step after resizing, so resize math never needs to
+// think about rotation — it just rotates whatever canvas it's handed.
+function applyRotation(sourceCanvas, angleDeg) {
+  const angle = ((angleDeg % 360) + 360) % 360;
+  if (angle === 0) return sourceCanvas;
+  const swapped = angle % 180 !== 0;
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = swapped ? sourceCanvas.height : sourceCanvas.width;
+  outCanvas.height = swapped ? sourceCanvas.width : sourceCanvas.height;
+  const ctx = outCanvas.getContext('2d');
+  ctx.translate(outCanvas.width / 2, outCanvas.height / 2);
+  ctx.rotate(angle * Math.PI / 180);
+  ctx.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2);
+  return outCanvas;
+}
+
+// ---------- Shared output pipeline (resize + rotate + encode + EXIF) ----------
+// Used for the initial conversion, live re-encodes when Quality/Resize
+// change, and single-image rotation — always re-decoding from the original
+// file, never compounding loss on top of a previous JPG output.
+async function buildOutput(file, rotation) {
+  const source = await loadSource(file);
+  const canvas = applyRotation(buildResizedCanvas(source), rotation);
+  source.close();
+
+  const quality = parseInt(qualitySlider.value) / 100;
+  let blob = await canvasToBlob(canvas, quality);
   const exifSegment = await getExifSegment(file);
   if (exifSegment) {
     patchOrientation(exifSegment);
     blob = await insertExifSegment(blob, exifSegment);
   }
 
-  // Small real thumbnail for the list — a few KB instead of several MB
-  const scale = Math.min(1, THUMB_SIZE / Math.max(source.width, source.height));
-  const tw = Math.max(1, Math.round(source.width * scale));
-  const th = Math.max(1, Math.round(source.height * scale));
+  const scale = Math.min(1, THUMB_SIZE / Math.max(canvas.width, canvas.height));
+  const tw = Math.max(1, Math.round(canvas.width * scale));
+  const th = Math.max(1, Math.round(canvas.height * scale));
   const thumbCanvas = document.createElement('canvas');
   thumbCanvas.width = tw;
   thumbCanvas.height = th;
-  thumbCanvas.getContext('2d').drawImage(source.drawable, 0, 0, tw, th);
+  thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
   const thumbBlob = await canvasToBlob(thumbCanvas, 0.6);
-  const thumbUrl = URL.createObjectURL(thumbBlob);
 
-  source.close();
+  return { blob, thumbBlob };
+}
 
+async function processFile(file) {
+  counter += 1;
+  const index = counter;
+  const qualityPercent = parseInt(qualitySlider.value);
+
+  const dateObj = await getFileDate(file);
+  let output;
+  try {
+    output = await buildOutput(file, 0);
+  } catch (err) {
+    alert(`Could not read "${file.name}" as an image.`);
+    return;
+  }
+  const thumbUrl = URL.createObjectURL(output.thumbBlob);
   const baseName = computeName(file.name, index, dateObj, qualityPercent);
-  addItem(file, blob, thumbUrl, baseName, index, dateObj, qualityPercent);
+  addItem(file, output.blob, thumbUrl, baseName, index, dateObj, qualityPercent);
 }
 
 function updateBulkButtons() {
@@ -998,6 +1237,7 @@ function updateBulkButtons() {
   allBtn.style.display = showBulk;
   downloadAllBtn.style.display = showBulk;
   clearAllBtn.style.display = showAny;
+  resetAllBtn.style.display = showAny;
   exportAllBtn.style.display = showAny;
   exportZipBtn.style.display = showBulk;
 }
@@ -1012,10 +1252,7 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality) {
   thumb.className = 'thumb';
   thumb.src = thumbUrl;
   thumb.title = 'Click to enlarge';
-  thumb.addEventListener('click', () => {
-    const current = processed.find(p => p.id === id);
-    if (current) openImagePreview(current.url);
-  });
+  thumb.addEventListener('click', () => openImagePreview(id));
 
   const info = document.createElement('div');
   info.className = 'info';
@@ -1045,8 +1282,11 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality) {
   remove.innerHTML = '&times;';
   remove.title = 'Remove';
   remove.addEventListener('click', () => {
-    URL.revokeObjectURL(url);
-    URL.revokeObjectURL(thumbUrl);
+    const current = processed.find(p => p.id === id);
+    if (current) {
+      URL.revokeObjectURL(current.url);
+      URL.revokeObjectURL(current.thumbUrl);
+    }
     row.remove();
     processed = processed.filter(p => p.id !== id);
     resolveDuplicateNames();
@@ -1061,7 +1301,8 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality) {
 
   processed.push({
     id, index, file, originalName: file.name, originalSize: file.size,
-    baseName, name: baseName, blob, url, thumbUrl, nameEl, sizesEl: sizes, dlEl: dl, dateObj, quality
+    baseName, name: baseName, blob, url, thumbUrl, nameEl, sizesEl: sizes, thumbEl: thumb, dlEl: dl,
+    dateObj, quality, rotation: 0
   });
   resolveDuplicateNames();
   updateBulkButtons();
@@ -1079,6 +1320,64 @@ clearAllBtn.addEventListener('click', () => {
   counter = 0;
   itemCounter = 0;
   updateBulkButtons();
+});
+
+function setActiveSeg(container, dataAttr, value) {
+  container.querySelectorAll('.seg-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset[dataAttr] === value);
+  });
+}
+
+resetAllBtn.addEventListener('click', async () => {
+  if (!confirm('Reset all settings to default? Your uploaded images stay in the list.')) return;
+
+  // Quality
+  qualitySlider.value = 75;
+  qualityLabel.textContent = '75%';
+  localStorage.setItem('jpg75-quality', '75');
+  document.getElementById('qualityFieldLabel').classList.remove('is-modified');
+
+  // Resize
+  resizeEnabled.checked = false;
+  resizeFields.style.display = 'none';
+  setActiveSeg(resizeModeToggle, 'mode', 'percent');
+  resizePercentFields.style.display = 'block';
+  resizePixelFields.style.display = 'none';
+  resizePercent.value = 100;
+  resizePercentLabel.textContent = '100%';
+  localStorage.setItem('jpg75-resizePercent', '100');
+  document.getElementById('resizePercentFieldLabel').classList.remove('is-modified');
+  resizeWidth.value = '';
+  resizeHeight.value = '';
+  resizeLockRatio.checked = true;
+  updateResizeFitVisibility();
+  setActiveSeg(resizeFitToggle, 'fit', 'crop');
+  setActiveSeg(resizeFillToggle, 'fill', 'white');
+
+  // Rename
+  renameEnabled.checked = false;
+  renameFields.style.display = 'none';
+  patternInput.value = '';
+  patternPreset.value = '';
+  updatePreview();
+
+  // Export
+  setActiveSeg(exportFormatToggle, 'format', 'png');
+  exportPngFields.style.display = 'block';
+  exportWebpFields.style.display = 'none';
+  exportColor.value = '#ffffff';
+  localStorage.setItem('jpg75-exportColor', '#ffffff');
+  document.getElementById('exportColorFieldLabel').classList.remove('is-modified');
+  exportTolerance.value = 15;
+  exportToleranceLabel.textContent = '15%';
+  localStorage.setItem('jpg75-exportTolerance', '15');
+  document.getElementById('exportToleranceFieldLabel').classList.remove('is-modified');
+
+  // Per-image rotation
+  processed.forEach(p => { p.rotation = 0; });
+
+  if (processed.length > 0) await reprocessAll();
+  showToast('Settings reset to default');
 });
 
 downloadAllBtn.addEventListener('click', () => {
