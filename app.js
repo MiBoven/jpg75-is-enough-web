@@ -377,11 +377,12 @@ async function reencodeItem(p) {
   p.url = URL.createObjectURL(output.blob);
   p.thumbUrl = URL.createObjectURL(output.thumbBlob);
   p.quality = parseInt(qualitySlider.value);
+  p.outputWidth = output.outputWidth;
+  p.outputHeight = output.outputHeight;
   p.dlEl.href = p.url;
   p.thumbEl.src = p.thumbUrl;
   if (openItemId === p.id) p.detailImgEl.src = p.url;
-  const savings = Math.round((1 - output.blob.size / p.originalSize) * 100);
-  p.sizesEl.textContent = `${formatSize(p.originalSize)} → ${formatSize(output.blob.size)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}`;
+  p.sizesEl.textContent = formatSizesText(p.originalSize, output.blob.size, p.outputWidth, p.outputHeight);
 }
 
 async function rotateItem(p) {
@@ -588,11 +589,22 @@ patternPreset.addEventListener('change', () => {
 
 function pad(num, len) { return String(num).padStart(len, '0'); }
 
-function buildName(pattern, { index, originalBase, dateObj, quality }) {
+// Short labels for $S — only meaningful in Preset mode.
+const RESIZE_PRESET_LABELS = {
+  'print:9x13': 'Foto9x13', 'print:10x15': 'Foto10x15', 'print:11x15': 'Foto11x15',
+  'print:11x17': 'Foto11x17', 'print:13x18': 'Foto13x18', 'print:20x30': 'Foto20x30',
+  'print:21x29.7': 'DINA4',
+  'ratio:1x1': 'Square', 'ratio:3x4': '3x4', 'ratio:4x3': '4x3', 'ratio:9x16': '9x16', 'ratio:16x9': '16x9',
+  'fixed:1280x720': 'HD', 'fixed:1920x1080': 'FullHD', 'fixed:3840x2160': 'UHD',
+  'fixed:1080x1080': 'IGPost', 'fixed:1080x1350': 'IGPortrait', 'fixed:1080x1920': 'IGStory',
+  'fixed:1200x630': 'FBPost'
+};
+
+function buildName(pattern, { index, originalBase, dateObj, quality, originalWidth, originalHeight, outputWidth, outputHeight, allowSequence = true }) {
   if (!pattern) return originalBase;
   const d = dateObj || new Date();
   let out = pattern;
-  out = out.replace(/#+/g, (m) => pad(index, m.length));
+  if (allowSequence) out = out.replace(/#+/g, (m) => pad(index, m.length));
   out = out.replaceAll('*', originalBase);
   out = out.replaceAll('$Y', d.getFullYear());
   out = out.replaceAll('$M', pad(d.getMonth() + 1, 2));
@@ -601,23 +613,48 @@ function buildName(pattern, { index, originalBase, dateObj, quality }) {
   out = out.replaceAll('$m', pad(d.getMinutes(), 2));
   out = out.replaceAll('$s', pad(d.getSeconds(), 2));
   out = out.replaceAll('$Q', quality != null ? quality : qualitySlider.value);
+
+  const ow = outputWidth || originalWidth;
+  const oh = outputHeight || originalHeight;
+  out = out.replaceAll('$R', (ow && oh) ? `${ow}x${oh}` : '');
+
+  let percentStr = '100%';
+  if (resizeEnabled.checked && currentResizeMode() === 'percent') {
+    percentStr = Math.round(parseFloat(resizePercentLabel.value)) + '%';
+  } else if (originalWidth && originalHeight && ow && oh) {
+    const areaRatio = (ow * oh) / (originalWidth * originalHeight);
+    percentStr = Math.round(areaRatio * 100) + '%';
+  }
+  out = out.replaceAll('$P', percentStr);
+
+  let presetStr = '';
+  if (resizeEnabled.checked && currentResizeMode() === 'preset' && resizePreset.value) {
+    presetStr = RESIZE_PRESET_LABELS[resizePreset.value] || '';
+  }
+  out = out.replaceAll('$S', presetStr);
+
   return out;
 }
 
-function computeName(originalName, index, dateObj, quality) {
+function computeName(originalName, index, dateObj, quality, originalWidth, originalHeight, outputWidth, outputHeight) {
   const originalBase = originalName.replace(/\.[^.]+$/, '');
   const pattern = patternInput.value.trim();
   let base = originalBase;
   if (renameEnabled.checked && pattern) {
-    base = buildName(pattern, { index, originalBase, dateObj, quality }) || originalBase;
+    base = buildName(pattern, { index, originalBase, dateObj, quality, originalWidth, originalHeight, outputWidth, outputHeight }) || originalBase;
   }
   return base + '.jpg';
 }
 
 function updatePreview() {
   if (!renameEnabled.checked) return;
+  const origW = 1920, origH = 1080; // illustrative "picture" dimensions
+  const target = computeResizeTarget(origW, origH);
+  const outW = target ? target.w : origW;
+  const outH = target ? target.h : origH;
   const name = buildName(patternInput.value.trim(), {
-    index: 42, originalBase: 'picture', quality: qualitySlider.value
+    index: 42, originalBase: 'picture', quality: qualitySlider.value,
+    originalWidth: origW, originalHeight: origH, outputWidth: outW, outputHeight: outH
   });
   preview.textContent = `Example: picture.png → ${name || 'picture'}.jpg`;
 }
@@ -628,7 +665,7 @@ function updateAllNames() {
     if (p.nameLocked) {
       p.baseName = (p.customName || p.originalName.replace(/\.[^.]+$/, '')) + '.jpg';
     } else {
-      p.baseName = computeName(p.originalName, p.index, p.dateObj, p.quality);
+      p.baseName = computeName(p.originalName, p.index, p.dateObj, p.quality, p.originalWidth, p.originalHeight, p.outputWidth, p.outputHeight);
     }
   });
   resolveDuplicateNames();
@@ -1177,7 +1214,7 @@ async function buildOutput(file, rotation) {
   thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
   const thumbBlob = await canvasToBlob(thumbCanvas, 0.6);
 
-  return { blob, thumbBlob, originalWidth, originalHeight };
+  return { blob, thumbBlob, originalWidth, originalHeight, outputWidth: canvas.width, outputHeight: canvas.height };
 }
 
 async function processFile(file) {
@@ -1194,8 +1231,8 @@ async function processFile(file) {
     return;
   }
   const thumbUrl = URL.createObjectURL(output.thumbBlob);
-  const baseName = computeName(file.name, index, dateObj, qualityPercent);
-  addItem(file, output.blob, thumbUrl, baseName, index, dateObj, qualityPercent, output.originalWidth, output.originalHeight);
+  const baseName = computeName(file.name, index, dateObj, qualityPercent, output.originalWidth, output.originalHeight, output.outputWidth, output.outputHeight);
+  addItem(file, output.blob, thumbUrl, baseName, index, dateObj, qualityPercent, output.originalWidth, output.originalHeight, output.outputWidth, output.outputHeight);
 }
 
 function updateBulkButtons() {
@@ -1210,7 +1247,13 @@ function updateBulkButtons() {
   updateResizeInfo();
 }
 
-function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, originalWidth, originalHeight) {
+function formatSizesText(originalSize, blobSize, outputWidth, outputHeight) {
+  const savings = Math.round((1 - blobSize / originalSize) * 100);
+  const res = (outputWidth && outputHeight) ? ` · ${outputWidth}×${outputHeight}px` : '';
+  return `${formatSize(originalSize)} → ${formatSize(blobSize)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}${res}`;
+}
+
+function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, originalWidth, originalHeight, outputWidth, outputHeight) {
   const id = ++itemCounter;
   const row = document.createElement('div');
   row.className = 'item';
@@ -1230,7 +1273,6 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
 
   const info = document.createElement('div');
   info.className = 'info';
-  const savings = Math.round((1 - blob.size / file.size) * 100);
 
   const nameEl = document.createElement('div');
   nameEl.className = 'name';
@@ -1239,7 +1281,7 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
 
   const sizes = document.createElement('div');
   sizes.className = 'sizes';
-  sizes.textContent = `${formatSize(file.size)} → ${formatSize(blob.size)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}`;
+  sizes.textContent = formatSizesText(file.size, blob.size, outputWidth, outputHeight);
 
   info.appendChild(nameEl);
   info.appendChild(sizes);
@@ -1301,8 +1343,15 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
   renameRow.className = 'row';
   const renameInput = document.createElement('input');
   renameInput.type = 'text';
-  renameInput.placeholder = 'Custom name (without .jpg)';
+  renameInput.placeholder = 'Custom name — supports $Y $M $h etc., not #';
+  const renameInfoBtn = document.createElement('button');
+  renameInfoBtn.className = 'icon';
+  renameInfoBtn.type = 'button';
+  renameInfoBtn.title = 'Naming placeholder help';
+  renameInfoBtn.textContent = 'i';
+  renameInfoBtn.addEventListener('click', () => modalBg.classList.add('open'));
   renameRow.appendChild(renameInput);
+  renameRow.appendChild(renameInfoBtn);
   const renameLockRow = document.createElement('div');
   renameLockRow.className = 'toggle-row';
   const renameLockLabel = document.createElement('label');
@@ -1319,6 +1368,9 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
   renameFields.appendChild(renameLockRow);
   renameFields.appendChild(renameSaveBtn);
   detail.appendChild(renameFields);
+  // Typing a custom name implies you want it kept — auto-check the lock,
+  // though the user can still manually uncheck it before saving.
+  renameInput.addEventListener('input', () => { renameLock.checked = true; });
 
   row.appendChild(itemRow);
   row.appendChild(detail);
@@ -1327,7 +1379,7 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
   const item = {
     id, index, file, originalName: file.name, originalSize: file.size,
     baseName, name: baseName, blob, url, thumbUrl, nameEl, sizesEl: sizes, thumbEl: thumb, dlEl: dl,
-    dateObj, quality, rotation: 0, originalWidth, originalHeight,
+    dateObj, quality, rotation: 0, originalWidth, originalHeight, outputWidth, outputHeight,
     customName: null, nameLocked: false,
     detailEl: detail, detailImgEl: detailImg, renameFieldsEl: renameFields,
     renameInputEl: renameInput, renameLockEl: renameLock
@@ -1343,9 +1395,18 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
     renameFields.classList.toggle('open');
   });
   renameSaveBtn.addEventListener('click', () => {
-    const val = renameInput.value.trim();
-    if (val) {
-      item.customName = val;
+    const raw = renameInput.value.trim();
+    if (raw) {
+      // Same placeholders as the global Rename files pattern, minus the
+      // "#" sequence counter — a single image has no batch position.
+      const resolved = buildName(raw, {
+        index: item.index, originalBase: item.originalName.replace(/\.[^.]+$/, ''),
+        dateObj: item.dateObj, quality: item.quality,
+        originalWidth: item.originalWidth, originalHeight: item.originalHeight,
+        outputWidth: item.outputWidth, outputHeight: item.outputHeight,
+        allowSequence: false
+      });
+      item.customName = resolved;
       item.nameLocked = renameLock.checked;
     } else {
       item.customName = null;

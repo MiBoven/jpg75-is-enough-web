@@ -218,20 +218,20 @@
 </div>
 <div class="btn-row">
   <button id="resetAllBtn">Reset all</button>
-  <button id="clearAllBtn">Clear all</button>
+  <button id="clearAllBtn">Remove all</button>
 </div>
 <p class="processing-hint" id="processingHint" style="display:none;"></p>
 <div id="list"></div>
 
 <div class="toast" id="toast"></div>
 
-<footer>JPG75 is Enough · v1.8.3</footer>
+<footer>JPG75 is Enough · v1.9.0</footer>
 
 <div class="modal-bg" id="modalAbout">
   <div class="modal">
     <h2>About</h2>
     <p><strong>JPG75 is Enough</strong></p>
-    <p class="muted">Version <span id="aboutVersion">1.8.3</span></p>
+    <p class="muted">Version <span id="aboutVersion">1.9.0</span></p>
     <p>Converts images to JPG at reduced quality — entirely in your browser. No files are ever uploaded to a server; everything happens locally on this device.</p>
     <p class="muted small">EXIF metadata (capture date, camera model, orientation, etc.) is preserved through the conversion when the source file has it.</p>
     <button class="close" data-close>Close</button>
@@ -251,12 +251,17 @@
       <tr><td>$m</td><td>Minute, same source</td></tr>
       <tr><td>$s</td><td>Second, same source</td></tr>
       <tr><td>$Q</td><td>JPEG quality used (e.g. 75)</td></tr>
+      <tr><td>$R</td><td>Saved resolution in pixels, e.g. 1920x1080</td></tr>
+      <tr><td>$P</td><td>Resize scale — the exact % in Percent mode, otherwise an approximate % based on the actual pixel change</td></tr>
+      <tr><td>$S</td><td>Resize preset name, e.g. FullHD or Foto9x13 (empty outside Preset mode)</td></tr>
     </table>
     <div class="examples">
       <strong>Examples</strong><br>
       <code>Image#####</code> → 42nd image becomes <code>Image00042.jpg</code><br>
       <code>$Y$M$D_$h$m$s</code> → taken 30.9.2004, 14:05:09 → <code>20040930_140509.jpg</code><br>
-      <code>*_$Q</code> → image named <code>picture.png</code>, quality 75 → <code>picture_75.jpg</code>
+      <code>*_$Q</code> → image named <code>picture.png</code>, quality 75 → <code>picture_75.jpg</code><br>
+      <code>*_$R_$P</code> → HD photo resized to 1000×1000 → <code>picture_1000x1000_48%.jpg</code><br>
+      <code>*_$S</code> → resized with the FullHD preset → <code>picture_FullHD.jpg</code>
     </div>
     <button class="close" data-close>Close</button>
   </div>

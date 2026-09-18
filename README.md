@@ -27,14 +27,17 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
     | `$Y` `$M` `$D` | Year / month / day the photo was taken (EXIF capture date), falling back to the file's last-modified date if no EXIF data is present |
     | `$h` `$m` `$s` | Hour / minute / second, same source |
     | `$Q` | The JPEG quality used for that image (e.g. `75`) |
+    | `$R` | Saved resolution in pixels, e.g. `1920x1080` |
+    | `$P` | Resize scale — the exact % in Percent mode, otherwise an approximate % derived from the actual pixel change |
+    | `$S` | Resize preset name, e.g. `FullHD` or `Foto9x13` (empty outside Preset mode) |
 
-    Example: `*_$Q` → `picture.png` at 75% quality becomes `picture_75.jpg`
+    Example: `*_$Q` → `picture.png` at 75% quality becomes `picture_75.jpg`; `*_$R_$P` → a resized HD photo becomes `picture_1000x1000_48%.jpg`
 - Names update live in the list as you change the rename pattern
 - If a rename pattern produces the same name for multiple images (e.g. no `#` counter and two photos taken close together), **every** image in that group is numbered chronologically — `_1`, `_2`, ... inserted before `.jpg` — using millisecond-precision EXIF capture time where available
-- Remove individual images from the list, or clear the whole list at once with **Clear all**
+- Remove individual images from the list, or clear the whole list at once with **Remove all** (the app's other settings aren't affected — only the file list)
 - You're warned before an accidental page reload or navigation throws away unsaved progress
 - Download buttons ("Download all" / "Download all as ZIP") sit above the file list; images are converted **one at a time** using `createImageBitmap` and small real thumbnails, so large batches (hundreds of photos) don't run out of memory on mobile
-- Dark mode by default, with a light mode toggle
+- Dark mode by default, with a light mode toggle (moved into the ⋮-menu)
 - Mobile-first layout — designed to be used from a phone
 - 100% client-side: no backend, no analytics, no image ever leaves the device
 - Original EXIF metadata (capture date, camera model, ISO, aperture, GPS, etc.) is preserved through the JPG conversion when the source file has it — re-encoding via `canvas` normally strips all of this
@@ -44,15 +47,16 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
   - **WebP** reuses the main Quality slider — no separate quality control
   - Available via "Export all" / "Export all as ZIP" — the regular "Save" / "Download all" buttons always produce JPG
 - **Quality**, the export **transparent color**, and export **tolerance** are remembered across visits (`localStorage`); clicking a setting's label resets it to the default, shown with a small **•** marker whenever it's been changed from default
-- Tapping an item in the list expands it in place, showing the full converted image without needing to scroll — no popup/modal. Opening another item closes the previous one automatically
+- Tapping an item in the list expands it in place, showing the full converted image at its full width (the panel's height adapts to the image, whatever its orientation) without needing to scroll — no popup/modal. Opening another item closes the previous one automatically
+- The list shows each image's current (possibly resized) resolution alongside its file size
 - **Resize images** *(optional, between Quality and Rename files)*:
   - Whenever every loaded image shares the same resolution (or only one is loaded), that size is shown live and used as the basis for every preview below
   - **Percent** mode: a 5%-step slider from 10–300%, plus a precise number field for exact values in between; shows the resulting pixel size live
   - **Pixel** mode: width and/or height, pre-filled as a placeholder with the current image size; with **Keep aspect ratio** on, editing one side live-updates the other to match; with it off and both sides filled, choose **Zoom (crop)** to fill the exact box, or **Fit** to keep the whole image with the border filled in **White**, **Anthracite**, or a **blurred** copy of the image itself
-  - **Preset** mode: photo print sizes (with a selectable **DPI** — 72/150/300/600, default 300), pure aspect ratios (computed from each image's own resolution), fixed video/screen sizes, and social media formats — all sharing the same Zoom/Fit + border-fill choice as Pixel mode
+  - **Preset** mode: photo print sizes (with a selectable **DPI** — 72/150/300/600, default 300; these auto-orient to match the image, e.g. a 9×13 print becomes 13×9 for a landscape photo), pure aspect ratios (computed from each image's own resolution, always applied *after* rotation so a 16:9 choice stays 16:9), fixed video/screen sizes, and social media formats (fixed sizes keep their deliberate orientation) — all sharing the same Zoom/Fit + border-fill choice as Pixel mode
   - Changing any resize setting re-encodes already-converted images in place, same as Quality
-- **Rotate, rename, and reset — per image**: expand an item in the list to rotate it 90° at a time (confirmed with a toast), give it a custom name that's optionally **locked** so the "Rename files" pattern never overwrites it, or reset that one image's rotation and custom name back to default
-- **Reset all**: restores Quality, Resize, Rename, and Export settings (and every image's rotation and per-image name override) back to their defaults — the uploaded/converted images themselves stay in the list, unlike **Clear all**
+- **Rotate, rename, and reset — per image**: expand an item in the list to rotate it 90° at a time (confirmed with a toast), give it a custom name — the same placeholders as the global Rename pattern work here too, except `#` — that's optionally **locked** so the "Rename files" pattern never overwrites it (typing a name auto-checks the lock), or reset that one image's rotation and custom name back to default
+- **Reset all**: restores Quality, Resize, Rename, and Export settings (and every image's rotation and per-image name override) back to their defaults — the uploaded/converted images themselves stay in the list, unlike **Remove all**
 
 ## How it works
 
@@ -86,6 +90,12 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.9.0 — 2026-09-18 — $R/$P/$S placeholders, per-image placeholders, resolution in list
+- Added three rename placeholders: `$R` (saved resolution, e.g. `1920x1080`), `$P` (resize scale — exact % in Percent mode, otherwise an approximate % from the actual pixel change), and `$S` (resize preset name, e.g. `FullHD`)
+- Renamed the **Clear all** button to **Remove all** — it only removes the file list, none of the app's settings
+- Per-image renaming now supports the same placeholders as the global Rename pattern (except `#`, which has no meaning for a single image), with its own **i** info button for the placeholder legend; typing a custom name now auto-checks "keep this name"
+- The list now shows each image's current (possibly resized) resolution alongside its file size
 
 ### 1.8.3 — 2026-09-18 — Auto-oriented print presets, fixed Pixel field styling
 - Photo print presets (e.g. 9×13 cm) now auto-orient to match the image — a landscape photo gets a landscape-oriented print size instead of staying portrait. Fixed video/screen and social media presets keep their deliberate orientation
