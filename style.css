@@ -114,7 +114,7 @@ label { font-size: 14px; }
 
 input[type=range] { flex: 1; accent-color: var(--accent); }
 input[type=text], input[type=checkbox] { accent-color: var(--accent); }
-input[type=text], select {
+input[type=text], input[type=number], select {
   flex: 1; min-width: 0; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
   border-radius: 8px; padding: 8px 10px; font-size: 14px;
 }

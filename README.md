@@ -87,6 +87,10 @@ Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not native
 
 ## Changelog
 
+### 1.8.3 — 2026-09-18 — Auto-oriented print presets, fixed Pixel field styling
+- Photo print presets (e.g. 9×13 cm) now auto-orient to match the image — a landscape photo gets a landscape-oriented print size instead of staying portrait. Fixed video/screen and social media presets keep their deliberate orientation
+- Fixed the Pixel mode's width/height fields overflowing narrow screens and looking inconsistent with the rest of the app — they now share the same dark styling and can shrink to fit, like the Percent field
+
 ### 1.8.2 — 2026-09-18 — Fix DPI dropdown overflow, ratio after rotation
 - Fixed the DPI dropdown (Preset mode) overflowing off-screen on narrow viewports — `<select>` elements now properly shrink to fit their row instead of forcing it wider
 - Fixed aspect-ratio presets (e.g. 16:9) flipping to the wrong orientation (e.g. 9:16) after rotating an image — rotation is now applied to the source *before* the resize/ratio math runs, so the chosen ratio always stays correct regardless of rotation

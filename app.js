@@ -1029,8 +1029,16 @@ function computeResizeTarget(srcW, srcH) {
 
     if (kind === 'print' || kind === 'fixed') {
       const cmToPx = parseInt(resizeDpi.value) / 2.54;
-      const w = kind === 'print' ? Math.round(a * cmToPx) : a;
-      const h = kind === 'print' ? Math.round(b * cmToPx) : b;
+      let w = kind === 'print' ? Math.round(a * cmToPx) : a;
+      let h = kind === 'print' ? Math.round(b * cmToPx) : b;
+      // Photo print sizes auto-orient to match the image (a 9×13 print
+      // becomes 13×9 for a landscape photo) — fixed video/social sizes
+      // are deliberately a specific orientation, so they stay as chosen.
+      if (kind === 'print') {
+        const srcLandscape = srcW >= srcH;
+        const boxLandscape = w >= h;
+        if (srcLandscape !== boxLandscape) [w, h] = [h, w];
+      }
       return { w, h, fit, fill: fillMode };
     }
 
