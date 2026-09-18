@@ -1122,20 +1122,22 @@ function buildResizedCanvas(source) {
 }
 
 // ---------- Rotation ----------
-// Applied as a final step after resizing, so resize math never needs to
-// think about rotation — it just rotates whatever canvas it's handed.
-function applyRotation(sourceCanvas, angleDeg) {
+// Applied to the decoded source BEFORE resizing, not after — so a preset
+// like 16:9 stays 16:9 once the image is rotated, instead of the resize
+// math computing the ratio against the pre-rotation dimensions and then
+// having rotation swap width/height underneath it.
+function rotateSource(source, angleDeg) {
   const angle = ((angleDeg % 360) + 360) % 360;
-  if (angle === 0) return sourceCanvas;
+  if (angle === 0) return source;
   const swapped = angle % 180 !== 0;
-  const outCanvas = document.createElement('canvas');
-  outCanvas.width = swapped ? sourceCanvas.height : sourceCanvas.width;
-  outCanvas.height = swapped ? sourceCanvas.width : sourceCanvas.height;
-  const ctx = outCanvas.getContext('2d');
-  ctx.translate(outCanvas.width / 2, outCanvas.height / 2);
+  const canvas = document.createElement('canvas');
+  canvas.width = swapped ? source.height : source.width;
+  canvas.height = swapped ? source.width : source.height;
+  const ctx = canvas.getContext('2d');
+  ctx.translate(canvas.width / 2, canvas.height / 2);
   ctx.rotate(angle * Math.PI / 180);
-  ctx.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2);
-  return outCanvas;
+  ctx.drawImage(source.drawable, -source.width / 2, -source.height / 2);
+  return { drawable: canvas, width: canvas.width, height: canvas.height, close: () => {} };
 }
 
 // ---------- Shared output pipeline (resize + rotate + encode + EXIF) ----------
@@ -1146,7 +1148,8 @@ async function buildOutput(file, rotation) {
   const source = await loadSource(file);
   const originalWidth = source.width;
   const originalHeight = source.height;
-  const canvas = applyRotation(buildResizedCanvas(source), rotation);
+  const rotated = rotateSource(source, rotation);
+  const canvas = buildResizedCanvas(rotated);
   source.close();
 
   const quality = parseInt(qualitySlider.value) / 100;

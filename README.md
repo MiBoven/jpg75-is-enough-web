@@ -87,6 +87,10 @@ Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not native
 
 ## Changelog
 
+### 1.8.2 — 2026-09-18 — Fix DPI dropdown overflow, ratio after rotation
+- Fixed the DPI dropdown (Preset mode) overflowing off-screen on narrow viewports — `<select>` elements now properly shrink to fit their row instead of forcing it wider
+- Fixed aspect-ratio presets (e.g. 16:9) flipping to the wrong orientation (e.g. 9:16) after rotating an image — rotation is now applied to the source *before* the resize/ratio math runs, so the chosen ratio always stays correct regardless of rotation
+
 ### 1.8.1 — 2026-09-18 — Image always full width (height adapts)
 - The expanded item image now always spans full width — for portrait images (or a landscape photo rotated 90°), the panel's height adapts to the image instead of the image being squeezed into a fixed-height box with bars on the sides
 
