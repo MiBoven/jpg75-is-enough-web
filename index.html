@@ -65,6 +65,7 @@
     <input type="checkbox" id="resizeEnabled">
   </div>
   <div id="resizeFields" style="display:none; margin-top:12px;">
+    <p class="muted small" id="resizeCurrentInfo" style="display:none;"></p>
     <div class="segment" id="resizeModeToggle">
       <button type="button" class="seg-btn active" data-mode="percent">Percent</button>
       <button type="button" class="seg-btn" data-mode="pixel">Pixel</button>
@@ -74,9 +75,11 @@
     <div id="resizePercentFields" style="margin-top:10px;">
       <div class="row">
         <label class="label-main resettable" id="resizePercentFieldLabel" style="min-width:70px;" title="Click to reset to default">Scale</label>
-        <input type="range" id="resizePercent" min="10" max="300" value="100">
-        <span class="qty-val" id="resizePercentLabel">100%</span>
+        <input type="range" id="resizePercent" min="10" max="300" value="100" step="5">
+        <input type="number" class="pct-input" id="resizePercentLabel" min="10" max="300" value="100">
+        <span class="muted">%</span>
       </div>
+      <p class="muted small" id="resizePercentResult" style="display:none;"></p>
     </div>
 
     <div id="resizePixelFields" style="display:none; margin-top:10px;">
@@ -89,40 +92,49 @@
         <label for="resizeLockRatio">Keep aspect ratio</label>
         <input type="checkbox" id="resizeLockRatio" checked>
       </div>
-      <p class="muted small">Fill in width and/or height — the other side is calculated to keep the image's own proportions.</p>
+      <p class="muted small">Leave a field empty to use the current image size shown as its placeholder. With "Keep aspect ratio" on, editing one side updates the other live.</p>
     </div>
 
     <div id="resizePresetFields" style="display:none; margin-top:10px;">
-      <select id="resizePreset">
-        <option value="">Choose a preset…</option>
-        <optgroup label="Photo prints (300 DPI)">
-          <option value="print:9x13">9 × 13 cm</option>
-          <option value="print:10x15">10 × 15 cm</option>
-          <option value="print:11x15">11 × 15 cm</option>
-          <option value="print:11x17">11 × 17 cm</option>
-          <option value="print:13x18">13 × 18 cm</option>
-          <option value="print:20x30">20 × 30 cm</option>
-          <option value="print:21x29.7">DIN A4</option>
-        </optgroup>
-        <optgroup label="Aspect ratios">
-          <option value="ratio:1x1">1:1 (Square)</option>
-          <option value="ratio:3x4">3:4</option>
-          <option value="ratio:4x3">4:3</option>
-          <option value="ratio:9x16">9:16</option>
-          <option value="ratio:16x9">16:9</option>
-        </optgroup>
-        <optgroup label="Video / screen">
-          <option value="fixed:1280x720">HD (1280×720)</option>
-          <option value="fixed:1920x1080">Full HD (1920×1080)</option>
-          <option value="fixed:3840x2160">UHD / 4K (3840×2160)</option>
-        </optgroup>
-        <optgroup label="Social media">
-          <option value="fixed:1080x1080">Instagram Post (1080×1080)</option>
-          <option value="fixed:1080x1350">Instagram Portrait (1080×1350)</option>
-          <option value="fixed:1080x1920">Instagram/TikTok Story (1080×1920)</option>
-          <option value="fixed:1200x630">Facebook/LinkedIn Post (1200×630)</option>
-        </optgroup>
-      </select>
+      <div class="row">
+        <select id="resizePreset" style="flex:2;">
+          <option value="">Choose a preset…</option>
+          <optgroup label="Photo prints">
+            <option value="print:9x13">9 × 13 cm</option>
+            <option value="print:10x15">10 × 15 cm</option>
+            <option value="print:11x15">11 × 15 cm</option>
+            <option value="print:11x17">11 × 17 cm</option>
+            <option value="print:13x18">13 × 18 cm</option>
+            <option value="print:20x30">20 × 30 cm</option>
+            <option value="print:21x29.7">DIN A4</option>
+          </optgroup>
+          <optgroup label="Aspect ratios">
+            <option value="ratio:1x1">1:1 (Square)</option>
+            <option value="ratio:3x4">3:4</option>
+            <option value="ratio:4x3">4:3</option>
+            <option value="ratio:9x16">9:16</option>
+            <option value="ratio:16x9">16:9</option>
+          </optgroup>
+          <optgroup label="Video / screen">
+            <option value="fixed:1280x720">HD (1280×720)</option>
+            <option value="fixed:1920x1080">Full HD (1920×1080)</option>
+            <option value="fixed:3840x2160">UHD / 4K (3840×2160)</option>
+          </optgroup>
+          <optgroup label="Social media">
+            <option value="fixed:1080x1080">Instagram Post (1080×1080)</option>
+            <option value="fixed:1080x1350">Instagram Portrait (1080×1350)</option>
+            <option value="fixed:1080x1920">Instagram/TikTok Story (1080×1920)</option>
+            <option value="fixed:1200x630">Facebook/LinkedIn Post (1200×630)</option>
+          </optgroup>
+        </select>
+        <select id="resizeDpi" style="flex:1;" title="Only used for photo print presets (cm)">
+          <option value="72">72 DPI</option>
+          <option value="150">150 DPI</option>
+          <option value="300" selected>300 DPI</option>
+          <option value="600">600 DPI</option>
+        </select>
+      </div>
+      <p class="muted small" id="resizePresetResult" style="display:none;"></p>
     </div>
 
     <div id="resizeFitFields" style="display:none; margin-top:10px;">
@@ -211,24 +223,13 @@
 
 <div class="toast" id="toast"></div>
 
-<footer>JPG75 is Enough · v1.6.0</footer>
-
-<div class="modal-bg" id="modalImagePreview">
-  <div class="modal image-preview-modal">
-    <div class="card-header-row">
-      <label class="label-main">Preview</label>
-      <button class="icon" id="closeImagePreview" title="Close">×</button>
-    </div>
-    <img id="previewImageEl" src="" alt="Enlarged preview">
-    <p class="muted small" style="text-align:center; margin-top:8px;">Tap the image to rotate it 90°</p>
-  </div>
-</div>
+<footer>JPG75 is Enough · v1.7.0</footer>
 
 <div class="modal-bg" id="modalAbout">
   <div class="modal">
     <h2>About</h2>
     <p><strong>JPG75 is Enough</strong></p>
-    <p class="muted">Version <span id="aboutVersion">1.6.0</span></p>
+    <p class="muted">Version <span id="aboutVersion">1.7.0</span></p>
     <p>Converts images to JPG at reduced quality — entirely in your browser. No files are ever uploaded to a server; everything happens locally on this device.</p>
     <p class="muted small">EXIF metadata (capture date, camera model, orientation, etc.) is preserved through the conversion when the source file has it.</p>
     <button class="close" data-close>Close</button>
@@ -331,25 +332,33 @@ function showToast(msg) {
 }
 
 // ---------- Enlarged image preview + rotate ----------
-const modalImagePreview = document.getElementById('modalImagePreview');
-const previewImageEl = document.getElementById('previewImageEl');
-const closeImagePreview = document.getElementById('closeImagePreview');
-let currentPreviewId = null;
-function openImagePreview(id) {
-  currentPreviewId = id;
+// ---------- Inline item detail (accordion) ----------
+// Only one item's detail panel is open at a time; opening another closes
+// the previous one. Populated in addItem, toggled from the item's summary row.
+let openItemId = null;
+function closeItemDetail(p) {
+  if (!p || !p.detailEl) return;
+  p.detailEl.style.display = 'none';
+  if (openItemId === p.id) openItemId = null;
+}
+function toggleItemDetail(id) {
   const p = processed.find(x => x.id === id);
   if (!p) return;
-  previewImageEl.src = p.url;
-  modalImagePreview.classList.add('open');
+  if (openItemId === id) {
+    closeItemDetail(p);
+    return;
+  }
+  if (openItemId !== null) {
+    const prev = processed.find(x => x.id === openItemId);
+    if (prev) closeItemDetail(prev);
+  }
+  p.detailImgEl.src = p.url;
+  p.renameInputEl.value = p.customName || '';
+  p.renameLockEl.checked = p.nameLocked;
+  p.renameFieldsEl.classList.remove('open');
+  p.detailEl.style.display = 'block';
+  openItemId = id;
 }
-closeImagePreview.addEventListener('click', () => modalImagePreview.classList.remove('open'));
-previewImageEl.addEventListener('click', async () => {
-  const p = processed.find(x => x.id === currentPreviewId);
-  if (!p) return;
-  await rotateItem(p);
-  previewImageEl.src = p.url;
-  showToast('Image rotated');
-});
 document.querySelectorAll('[data-close]').forEach(btn => {
   btn.addEventListener('click', () => btn.closest('.modal-bg').classList.remove('open'));
 });
@@ -385,6 +394,10 @@ const resizeFillFields = document.getElementById('resizeFillFields');
 const resizeFillToggle = document.getElementById('resizeFillToggle');
 const resizePresetFields = document.getElementById('resizePresetFields');
 const resizePreset = document.getElementById('resizePreset');
+const resizeDpi = document.getElementById('resizeDpi');
+const resizeCurrentInfo = document.getElementById('resizeCurrentInfo');
+const resizePercentResult = document.getElementById('resizePercentResult');
+const resizePresetResult = document.getElementById('resizePresetResult');
 const toastEl = document.getElementById('toast');
 const exportFormatToggle = document.getElementById('exportFormatToggle');
 const exportPngFields = document.getElementById('exportPngFields');
@@ -449,8 +462,66 @@ function updateResizeSubfieldsVisibility() {
   resizeFitFields.style.display = showFit ? 'block' : 'none';
 }
 
+// The reference resolution used for every live preview below: only
+// meaningful if there's exactly one image, or every loaded image happens
+// to share the same original size.
+function getReferenceResolution() {
+  if (processed.length === 0) return null;
+  const first = processed[0];
+  if (!first.originalWidth || !first.originalHeight) return null;
+  const allSame = processed.every(p => p.originalWidth === first.originalWidth && p.originalHeight === first.originalHeight);
+  return allSame ? { w: first.originalWidth, h: first.originalHeight } : null;
+}
+
+function updateResizeInfo() {
+  if (!resizeEnabled.checked) {
+    resizeCurrentInfo.style.display = 'none';
+    resizePercentResult.style.display = 'none';
+    resizePresetResult.style.display = 'none';
+    return;
+  }
+  const ref = getReferenceResolution();
+
+  if (ref) {
+    resizeCurrentInfo.textContent = `Current image size: ${ref.w} × ${ref.h} px`;
+    resizeCurrentInfo.style.display = 'block';
+    resizeWidth.placeholder = `${ref.w} px`;
+    resizeHeight.placeholder = `${ref.h} px`;
+  } else if (processed.length > 1) {
+    resizeCurrentInfo.textContent = 'Loaded images have different sizes — live preview unavailable';
+    resizeCurrentInfo.style.display = 'block';
+    resizeWidth.placeholder = 'Width (px)';
+    resizeHeight.placeholder = 'Height (px)';
+  } else {
+    resizeCurrentInfo.style.display = 'none';
+    resizeWidth.placeholder = 'Width (px)';
+    resizeHeight.placeholder = 'Height (px)';
+  }
+
+  if (ref) {
+    const pct = (parseFloat(resizePercentLabel.value) || 100) / 100;
+    resizePercentResult.textContent = `Result: ${Math.round(ref.w * pct)} × ${Math.round(ref.h * pct)} px`;
+    resizePercentResult.style.display = 'block';
+  } else {
+    resizePercentResult.style.display = 'none';
+  }
+
+  if (ref && resizePreset.value) {
+    const target = computeResizeTarget(ref.w, ref.h);
+    if (target) {
+      resizePresetResult.textContent = `Result: ${target.w} × ${target.h} px`;
+      resizePresetResult.style.display = 'block';
+    } else {
+      resizePresetResult.style.display = 'none';
+    }
+  } else {
+    resizePresetResult.style.display = 'none';
+  }
+}
+
 resizeEnabled.addEventListener('change', () => {
   resizeFields.style.display = resizeEnabled.checked ? 'block' : 'none';
+  updateResizeInfo();
   if (processed.length > 0) reprocessAll();
 });
 resizeModeToggle.addEventListener('click', (e) => {
@@ -458,27 +529,71 @@ resizeModeToggle.addEventListener('click', (e) => {
   if (!btn) return;
   setActiveSeg(resizeModeToggle, 'mode', btn.dataset.mode);
   updateResizeSubfieldsVisibility();
+  updateResizeInfo();
   if (processed.length > 0) reprocessAll();
 });
+
+// Range (5% steps) and the precise number field stay in sync either way.
 resizePercent.addEventListener('input', () => {
-  resizePercentLabel.textContent = resizePercent.value + '%';
+  resizePercentLabel.value = resizePercent.value;
+  updateResizeInfo();
 });
 resizePercent.addEventListener('change', () => {
   if (processed.length > 0) reprocessAll();
 });
+resizePercentLabel.addEventListener('input', () => {
+  updateResizeInfo();
+});
+resizePercentLabel.addEventListener('change', () => {
+  let v = parseFloat(resizePercentLabel.value);
+  if (isNaN(v)) v = 100;
+  v = Math.min(300, Math.max(10, v));
+  resizePercentLabel.value = v;
+  resizePercent.value = v;
+  localStorage.setItem('jpg75-resizePercent', String(v));
+  document.getElementById('resizePercentFieldLabel').classList.toggle('is-modified', v !== 100);
+  updateResizeInfo();
+  if (processed.length > 0) reprocessAll();
+});
+
 resizeLockRatio.addEventListener('change', () => {
   updateResizeSubfieldsVisibility();
   if (processed.length > 0) reprocessAll();
 });
+// With "keep aspect ratio" on and a known reference resolution, editing one
+// side live-updates the other to match that resolution's proportions.
+resizeWidth.addEventListener('input', () => {
+  if (resizeLockRatio.checked) {
+    const ref = getReferenceResolution();
+    if (ref && resizeWidth.value) {
+      resizeHeight.value = Math.round(parseFloat(resizeWidth.value) * ref.h / ref.w);
+    }
+  }
+});
+resizeHeight.addEventListener('input', () => {
+  if (resizeLockRatio.checked) {
+    const ref = getReferenceResolution();
+    if (ref && resizeHeight.value) {
+      resizeWidth.value = Math.round(parseFloat(resizeHeight.value) * ref.w / ref.h);
+    }
+  }
+});
 resizeWidth.addEventListener('change', () => { if (processed.length > 0) reprocessAll(); });
 resizeHeight.addEventListener('change', () => { if (processed.length > 0) reprocessAll(); });
+
 resizePreset.addEventListener('change', () => {
+  updateResizeInfo();
+  if (processed.length > 0) reprocessAll();
+});
+resizeDpi.addEventListener('change', () => {
+  updateResizeInfo();
   if (processed.length > 0) reprocessAll();
 });
 resizeFitToggle.addEventListener('click', (e) => {
   const btn = e.target.closest('.seg-btn');
   if (!btn) return;
   setActiveSeg(resizeFitToggle, 'fit', btn.dataset.fit);
+  updateResizeInfo();
   if (processed.length > 0) reprocessAll();
 });
 resizeFillToggle.addEventListener('click', (e) => {
@@ -527,6 +642,7 @@ async function reencodeItem(p) {
   p.quality = parseInt(qualitySlider.value);
   p.dlEl.href = p.url;
   p.thumbEl.src = p.thumbUrl;
+  if (openItemId === p.id) p.detailImgEl.src = p.url;
   const savings = Math.round((1 - output.blob.size / p.originalSize) * 100);
   p.sizesEl.textContent = `${formatSize(p.originalSize)} → ${formatSize(output.blob.size)}${savings > 0 ? ' · ' + savings + '% smaller' : ''}`;
 }
@@ -599,7 +715,7 @@ setupPersistedControl({
   defaultValue: 100,
   inputEl: resizePercent,
   labelEl: document.getElementById('resizePercentFieldLabel'),
-  onApply: () => { resizePercentLabel.textContent = resizePercent.value + '%'; },
+  onApply: () => { resizePercentLabel.value = resizePercent.value; updateResizeInfo(); },
   fireChangeOnReset: true
 });
 
@@ -772,7 +888,11 @@ updatePreview();
 
 function updateAllNames() {
   processed.forEach(p => {
-    p.baseName = computeName(p.originalName, p.index, p.dateObj, p.quality);
+    if (p.nameLocked) {
+      p.baseName = (p.customName || p.originalName.replace(/\.[^.]+$/, '')) + '.jpg';
+    } else {
+      p.baseName = computeName(p.originalName, p.index, p.dateObj, p.quality);
+    }
   });
   resolveDuplicateNames();
 }
@@ -781,9 +901,12 @@ function updateAllNames() {
 // without a sequential number, and two photos taken close together),
 // every image in that group gets numbered chronologically: "_1", "_2", ...
 // inserted before the .jpg extension, based on capture/file time.
+// Locked names (set via the per-image Rename panel) are left untouched —
+// neither recomputed nor folded into the dedup numbering.
 function resolveDuplicateNames() {
   const groups = {};
   processed.forEach(p => {
+    if (p.nameLocked) return;
     (groups[p.baseName] ||= []).push(p);
   });
   Object.values(groups).forEach(group => {
@@ -801,6 +924,7 @@ function resolveDuplicateNames() {
     }
   });
   processed.forEach(p => {
+    if (p.nameLocked) p.name = p.baseName;
     p.nameEl.textContent = p.name;
     p.nameEl.title = p.name;
     p.dlEl.download = p.name;
@@ -1134,8 +1258,6 @@ const THUMB_SIZE = 64;
 const ANTHRACITE = '#2b2b2b';
 
 // ---------- Resize ----------
-const CM_TO_PX = 300 / 2.54; // 300 DPI, the usual photo-print standard
-
 function coverRatioBox(srcW, srcH, ratio) {
   // Largest box of the given ratio that fits entirely inside the source — crops the rest away.
   const srcRatio = srcW / srcH;
@@ -1156,7 +1278,7 @@ function computeResizeTarget(srcW, srcH) {
   const mode = resizeModeToggle.querySelector('.seg-btn.active').dataset.mode;
 
   if (mode === 'percent') {
-    const pct = parseInt(resizePercent.value) / 100;
+    const pct = (parseFloat(resizePercentLabel.value) || 100) / 100;
     return { w: Math.max(1, Math.round(srcW * pct)), h: Math.max(1, Math.round(srcH * pct)), fit: 'scale' };
   }
 
@@ -1169,8 +1291,9 @@ function computeResizeTarget(srcW, srcH) {
     const fit = fitMode === 'crop' ? 'cover' : 'contain';
 
     if (kind === 'print' || kind === 'fixed') {
-      const w = kind === 'print' ? Math.round(a * CM_TO_PX) : a;
-      const h = kind === 'print' ? Math.round(b * CM_TO_PX) : b;
+      const cmToPx = parseInt(resizeDpi.value) / 2.54;
+      const w = kind === 'print' ? Math.round(a * cmToPx) : a;
+      const h = kind === 'print' ? Math.round(b * cmToPx) : b;
       return { w, h, fit, fill: fillMode };
     }
 
@@ -1284,6 +1407,8 @@ function applyRotation(sourceCanvas, angleDeg) {
 // file, never compounding loss on top of a previous JPG output.
 async function buildOutput(file, rotation) {
   const source = await loadSource(file);
+  const originalWidth = source.width;
+  const originalHeight = source.height;
   const canvas = applyRotation(buildResizedCanvas(source), rotation);
   source.close();
 
@@ -1304,7 +1429,7 @@ async function buildOutput(file, rotation) {
   thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
   const thumbBlob = await canvasToBlob(thumbCanvas, 0.6);
 
-  return { blob, thumbBlob };
+  return { blob, thumbBlob, originalWidth, originalHeight };
 }
 
 async function processFile(file) {
@@ -1322,7 +1447,7 @@ async function processFile(file) {
   }
   const thumbUrl = URL.createObjectURL(output.thumbBlob);
   const baseName = computeName(file.name, index, dateObj, qualityPercent);
-  addItem(file, output.blob, thumbUrl, baseName, index, dateObj, qualityPercent);
+  addItem(file, output.blob, thumbUrl, baseName, index, dateObj, qualityPercent, output.originalWidth, output.originalHeight);
 }
 
 function updateBulkButtons() {
@@ -1334,19 +1459,26 @@ function updateBulkButtons() {
   resetAllBtn.style.display = showAny;
   exportAllBtn.style.display = showAny;
   exportZipBtn.style.display = showBulk;
+  updateResizeInfo();
 }
 
-function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality) {
+function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, originalWidth, originalHeight) {
   const id = ++itemCounter;
   const row = document.createElement('div');
   row.className = 'item';
   row.dataset.id = id;
 
+  const itemRow = document.createElement('div');
+  itemRow.className = 'item-row';
+
+  const summary = document.createElement('div');
+  summary.className = 'item-summary';
+  summary.title = 'Tap to expand';
+  summary.addEventListener('click', () => toggleItemDetail(id));
+
   const thumb = document.createElement('img');
   thumb.className = 'thumb';
   thumb.src = thumbUrl;
-  thumb.title = 'Click to enlarge';
-  thumb.addEventListener('click', () => openImagePreview(id));
 
   const info = document.createElement('div');
   info.className = 'info';
@@ -1363,6 +1495,8 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality) {
 
   info.appendChild(nameEl);
   info.appendChild(sizes);
+  summary.appendChild(thumb);
+  summary.appendChild(info);
 
   const url = URL.createObjectURL(blob);
   const dl = document.createElement('a');
@@ -1380,6 +1514,7 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality) {
     if (current) {
       URL.revokeObjectURL(current.url);
       URL.revokeObjectURL(current.thumbUrl);
+      if (openItemId === id) openItemId = null;
     }
     row.remove();
     processed = processed.filter(p => p.id !== id);
@@ -1387,19 +1522,107 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality) {
     updateBulkButtons();
   });
 
-  row.appendChild(thumb);
-  row.appendChild(info);
-  row.appendChild(dl);
-  row.appendChild(remove);
+  itemRow.appendChild(summary);
+  itemRow.appendChild(dl);
+  itemRow.appendChild(remove);
+
+  // ---- Expandable detail panel: full image + rotate/rename/reset ----
+  const detail = document.createElement('div');
+  detail.className = 'item-detail';
+  detail.style.display = 'none';
+
+  const detailImg = document.createElement('img');
+  detail.appendChild(detailImg);
+
+  const actions = document.createElement('div');
+  actions.className = 'item-detail-actions';
+  const rotateBtn = document.createElement('button');
+  rotateBtn.textContent = '🔄 Rotate';
+  const renameBtn = document.createElement('button');
+  renameBtn.textContent = '✏️ Rename';
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = '↺ Reset';
+  actions.appendChild(rotateBtn);
+  actions.appendChild(renameBtn);
+  actions.appendChild(resetBtn);
+  detail.appendChild(actions);
+
+  const renameFields = document.createElement('div');
+  renameFields.className = 'item-rename-fields';
+  const renameRow = document.createElement('div');
+  renameRow.className = 'row';
+  const renameInput = document.createElement('input');
+  renameInput.type = 'text';
+  renameInput.placeholder = 'Custom name (without .jpg)';
+  renameRow.appendChild(renameInput);
+  const renameLockRow = document.createElement('div');
+  renameLockRow.className = 'toggle-row';
+  const renameLockLabel = document.createElement('label');
+  renameLockLabel.textContent = "Keep this name even if Rename files changes";
+  const renameLock = document.createElement('input');
+  renameLock.type = 'checkbox';
+  renameLockRow.appendChild(renameLockLabel);
+  renameLockRow.appendChild(renameLock);
+  const renameSaveBtn = document.createElement('button');
+  renameSaveBtn.className = 'btn-secondary';
+  renameSaveBtn.style.cssText = 'width:100%; margin-top:8px; background:var(--surface-2); color:var(--text); border:1px solid var(--border); padding:9px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;';
+  renameSaveBtn.textContent = 'Save name';
+  renameFields.appendChild(renameRow);
+  renameFields.appendChild(renameLockRow);
+  renameFields.appendChild(renameSaveBtn);
+  detail.appendChild(renameFields);
+
+  row.appendChild(itemRow);
+  row.appendChild(detail);
   list.appendChild(row);
 
-  processed.push({
+  const item = {
     id, index, file, originalName: file.name, originalSize: file.size,
     baseName, name: baseName, blob, url, thumbUrl, nameEl, sizesEl: sizes, thumbEl: thumb, dlEl: dl,
-    dateObj, quality, rotation: 0
+    dateObj, quality, rotation: 0, originalWidth, originalHeight,
+    customName: null, nameLocked: false,
+    detailEl: detail, detailImgEl: detailImg, renameFieldsEl: renameFields,
+    renameInputEl: renameInput, renameLockEl: renameLock
+  };
+  processed.push(item);
+
+  rotateBtn.addEventListener('click', async () => {
+    await rotateItem(item);
+    detailImg.src = item.url;
+    showToast('Image rotated');
   });
+  renameBtn.addEventListener('click', () => {
+    renameFields.classList.toggle('open');
+  });
+  renameSaveBtn.addEventListener('click', () => {
+    const val = renameInput.value.trim();
+    if (val) {
+      item.customName = val;
+      item.nameLocked = renameLock.checked;
+    } else {
+      item.customName = null;
+      item.nameLocked = false;
+    }
+    updateAllNames();
+    renameFields.classList.remove('open');
+    showToast(item.nameLocked ? 'Name saved and locked' : 'Name updated');
+  });
+  resetBtn.addEventListener('click', async () => {
+    item.customName = null;
+    item.nameLocked = false;
+    item.rotation = 0;
+    renameInput.value = '';
+    renameLock.checked = false;
+    renameFields.classList.remove('open');
+    await reencodeItem(item);
+    updateAllNames();
+    detailImg.src = item.url;
+    showToast('Image reset');
+  });
+
   resolveDuplicateNames();
   updateBulkButtons();
+  updateResizeInfo();
 }
 
 clearAllBtn.addEventListener('click', () => {
@@ -1430,16 +1653,18 @@ resetAllBtn.addEventListener('click', async () => {
   resizeFields.style.display = 'none';
   setActiveSeg(resizeModeToggle, 'mode', 'percent');
   resizePercent.value = 100;
-  resizePercentLabel.textContent = '100%';
+  resizePercentLabel.value = 100;
   localStorage.setItem('jpg75-resizePercent', '100');
   document.getElementById('resizePercentFieldLabel').classList.remove('is-modified');
   resizeWidth.value = '';
   resizeHeight.value = '';
   resizeLockRatio.checked = true;
   resizePreset.value = '';
+  resizeDpi.value = '300';
   setActiveSeg(resizeFitToggle, 'fit', 'crop');
   setActiveSeg(resizeFillToggle, 'fill', 'white');
   updateResizeSubfieldsVisibility();
+  updateResizeInfo();
 
   // Rename
   renameEnabled.checked = false;
@@ -1460,10 +1685,18 @@ resetAllBtn.addEventListener('click', async () => {
   localStorage.setItem('jpg75-exportTolerance', '15');
   document.getElementById('exportToleranceFieldLabel').classList.remove('is-modified');
 
-  // Per-image rotation
-  processed.forEach(p => { p.rotation = 0; });
+  // Per-image rotation and name overrides
+  processed.forEach(p => {
+    p.rotation = 0;
+    p.customName = null;
+    p.nameLocked = false;
+    if (p.renameInputEl) p.renameInputEl.value = '';
+    if (p.renameLockEl) p.renameLockEl.checked = false;
+    if (p.renameFieldsEl) p.renameFieldsEl.classList.remove('open');
+  });
 
   if (processed.length > 0) await reprocessAll();
+  updateAllNames();
   showToast('Settings reset to default');
 });
 

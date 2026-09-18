@@ -44,19 +44,15 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
   - **WebP** reuses the main Quality slider — no separate quality control
   - Available via "Export all" / "Export all as ZIP" — the regular "Save" / "Download all" buttons always produce JPG
 - **Quality**, the export **transparent color**, and export **tolerance** are remembered across visits (`localStorage`); clicking a setting's label resets it to the default, shown with a small **•** marker whenever it's been changed from default
-- Tapping a thumbnail in the list opens it enlarged, making it easier to judge which color to pick for the export transparency
+- Tapping an item in the list expands it in place, showing the full converted image without needing to scroll — no popup/modal. Opening another item closes the previous one automatically
 - **Resize images** *(optional, between Quality and Rename files)*:
-  - **Percent** mode: 10–300% of each image's own size (default 100%)
-  - **Pixel** mode: enter a width and/or height; with **Keep aspect ratio** on, the other side is calculated per image (each photo keeps its own proportions); with it off and both sides filled, choose **Zoom (crop)** to fill the exact box, or **Fit** to keep the whole image with the border filled in **White**, **Anthracite**, or a **blurred** copy of the image itself
+  - Whenever every loaded image shares the same resolution (or only one is loaded), that size is shown live and used as the basis for every preview below
+  - **Percent** mode: a 5%-step slider from 10–300%, plus a precise number field for exact values in between; shows the resulting pixel size live
+  - **Pixel** mode: width and/or height, pre-filled as a placeholder with the current image size; with **Keep aspect ratio** on, editing one side live-updates the other to match; with it off and both sides filled, choose **Zoom (crop)** to fill the exact box, or **Fit** to keep the whole image with the border filled in **White**, **Anthracite**, or a **blurred** copy of the image itself
+  - **Preset** mode: photo print sizes (with a selectable **DPI** — 72/150/300/600, default 300), pure aspect ratios (computed from each image's own resolution), fixed video/screen sizes, and social media formats — all sharing the same Zoom/Fit + border-fill choice as Pixel mode
   - Changing any resize setting re-encodes already-converted images in place, same as Quality
-- **Rotate**: tap a thumbnail to open it enlarged, then tap the enlarged image to rotate it 90° — confirmed with a small toast notification. Rotation is per-image and re-applied whenever Quality/Resize settings change afterward
-- Resize also offers a **Preset** mode, alongside Percent and Pixel:
-  - **Photo prints** (300 DPI): 9×13, 10×15, 11×15, 11×17, 13×18, 20×30 cm, and DIN A4
-  - **Aspect ratios** (no fixed size — computed from each image's own resolution): 1:1, 3:4, 4:3, 9:16, 16:9
-  - **Video/screen**: HD, Full HD, UHD/4K
-  - **Social media**: Instagram Post/Portrait/Story, Facebook/LinkedIn Post
-  - Every preset uses the same Zoom (crop) / Fit (white, anthracite, or blurred border) choice as the Pixel mode
-- **Reset all**: restores Quality, Resize, Rename, and Export settings (and every image's rotation) back to their defaults — the uploaded/converted images themselves stay in the list, unlike **Clear all**
+- **Rotate, rename, and reset — per image**: expand an item in the list to rotate it 90° at a time (confirmed with a toast), give it a custom name that's optionally **locked** so the "Rename files" pattern never overwrites it, or reset that one image's rotation and custom name back to default
+- **Reset all**: restores Quality, Resize, Rename, and Export settings (and every image's rotation and per-image name override) back to their defaults — the uploaded/converted images themselves stay in the list, unlike **Clear all**
 
 ## How it works
 
@@ -86,6 +82,14 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.7.0 — 2026-09-17 — Inline item panel, live resize preview, DPI choice
+- Replaced the modal-based enlarged preview with an **inline expandable panel** per list item — tapping an item expands it in place (no popup, no scrolling needed to see the whole image); opening another item closes the previous one
+- That panel now also has **Rotate**, **Rename** (with an optional lock so "Rename files" never overwrites that image's name), and **Reset** (clears the custom name and rotation for just that image) actions
+- Resize's Percent slider now moves in **5% steps**, with a precise number field alongside it for exact in-between values
+- Added a **DPI** dropdown (72/150/300/600, default 300) for the Preset mode's photo-print sizes, instead of a fixed 300 DPI
+- When every loaded image shares one resolution (or only one is loaded), that size is now shown live and used to preview the resulting pixel size for Percent, Pixel (as field placeholders, with live width/height sync when the ratio is locked), and Preset modes
+- **Reset all** now also clears every image's custom name/lock, not just its rotation
 
 ### 1.6.0 — 2026-09-07 — Resize presets (photo prints, ratios, social media)
 - Added a third Resize mode, **Preset**, alongside Percent and Pixel:
