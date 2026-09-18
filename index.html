@@ -69,9 +69,9 @@
   <div id="resizeFields" style="display:none; margin-top:12px;">
     <p class="muted small" id="resizeCurrentInfo" style="display:none;"></p>
     <div class="segment" id="resizeModeToggle">
-      <button type="button" class="seg-btn active" data-mode="percent">Percent</button>
-      <button type="button" class="seg-btn" data-mode="pixel">Pixel</button>
       <button type="button" class="seg-btn" data-mode="preset">Preset</button>
+      <button type="button" class="seg-btn" data-mode="pixel">Pixel</button>
+      <button type="button" class="seg-btn active" data-mode="percent">Percent</button>
     </div>
 
     <div id="resizePercentFields" style="margin-top:10px;">
@@ -145,7 +145,7 @@
         <button type="button" class="seg-btn active" data-fit="crop">Zoom (crop)</button>
         <button type="button" class="seg-btn" data-fit="fit">Fit (fill border)</button>
       </div>
-      <div id="resizeFillFields" style="margin-top:8px;">
+      <div id="resizeFillFields" style="margin-top:8px; display:none;">
         <label class="label-main">Border fill</label>
         <div class="segment" id="resizeFillToggle">
           <button type="button" class="seg-btn active" data-fill="white">White</button>
@@ -225,13 +225,13 @@
 
 <div class="toast" id="toast"></div>
 
-<footer>JPG75 is Enough · v1.9.0</footer>
+<footer>JPG75 is Enough · v1.10.0</footer>
 
 <div class="modal-bg" id="modalAbout">
   <div class="modal">
     <h2>About</h2>
     <p><strong>JPG75 is Enough</strong></p>
-    <p class="muted">Version <span id="aboutVersion">1.9.0</span></p>
+    <p class="muted">Version <span id="aboutVersion">1.10.0</span></p>
     <p>Converts images to JPG at reduced quality — entirely in your browser. No files are ever uploaded to a server; everything happens locally on this device.</p>
     <p class="muted small">EXIF metadata (capture date, camera model, orientation, etc.) is preserved through the conversion when the source file has it.</p>
     <button class="close" data-close>Close</button>

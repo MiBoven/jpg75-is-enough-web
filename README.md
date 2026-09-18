@@ -55,7 +55,8 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
   - **Pixel** mode: width and/or height, pre-filled as a placeholder with the current image size; with **Keep aspect ratio** on, editing one side live-updates the other to match; with it off and both sides filled, choose **Zoom (crop)** to fill the exact box, or **Fit** to keep the whole image with the border filled in **White**, **Anthracite**, or a **blurred** copy of the image itself
   - **Preset** mode: photo print sizes (with a selectable **DPI** — 72/150/300/600, default 300; these auto-orient to match the image, e.g. a 9×13 print becomes 13×9 for a landscape photo), pure aspect ratios (computed from each image's own resolution, always applied *after* rotation so a 16:9 choice stays 16:9), fixed video/screen sizes, and social media formats (fixed sizes keep their deliberate orientation) — all sharing the same Zoom/Fit + border-fill choice as Pixel mode
   - Changing any resize setting re-encodes already-converted images in place, same as Quality
-- **Rotate, rename, and reset — per image**: expand an item in the list to rotate it 90° at a time (confirmed with a toast), give it a custom name — the same placeholders as the global Rename pattern work here too, except `#` — that's optionally **locked** so the "Rename files" pattern never overwrites it (typing a name auto-checks the lock), or reset that one image's rotation and custom name back to default
+- **Rotate, rename, and reset — per image**: expand an item in the list to rotate it 90° at a time (confirmed with a toast), give it a custom name — the same placeholders as the global Rename pattern work here too, except `#` — that's optionally **locked** so the "Rename files" pattern never overwrites it (typing a name auto-checks the lock, clearing it back out auto-unchecks it), compare against the untouched file with **Show original** (bottom-right of the expanded image, with an "Original" badge while active), or reset that one image's rotation and custom name back to default
+- Renamed filenames — from both the global pattern and per-image custom names — are sanitized to characters valid on Windows, macOS, and Linux
 - **Reset all**: restores Quality, Resize, Rename, and Export settings (and every image's rotation and per-image name override) back to their defaults — the uploaded/converted images themselves stay in the list, unlike **Remove all**
 
 ## How it works
@@ -90,6 +91,13 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.10.0 — 2026-09-18 — Show original, filename sanitizing, UI polish
+- Added a **Show original** button in the expanded item view (bottom-right of the image) to compare against the untouched source file, with an "Original" badge while active
+- Renamed filenames are now sanitized to characters valid on Windows/macOS/Linux (`< > : " / \ | ? *` and trailing dots/spaces are stripped), for both the global Rename pattern and per-image custom names
+- Per-image rename: clearing the name field back to empty now auto-unchecks "keep this name" again (it auto-checks while typing, as before)
+- Reordered the Resize mode buttons to Preset / Pixel / Percent
+- Border fill (White/Anthracite/Blurred) is now only shown when "Fit (fill border)" is selected — not for Zoom (crop), where it has no effect
 
 ### 1.9.0 — 2026-09-18 — $R/$P/$S placeholders, per-image placeholders, resolution in list
 - Added three rename placeholders: `$R` (saved resolution, e.g. `1920x1080`), `$P` (resize scale — exact % in Percent mode, otherwise an approximate % from the actual pixel change), and `$S` (resize preset name, e.g. `FullHD`)

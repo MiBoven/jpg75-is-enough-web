@@ -90,6 +90,9 @@ function toggleItemDetail(id) {
     if (prev) closeItemDetail(prev);
   }
   p.detailImgEl.src = p.url;
+  p.showingOriginal = false;
+  if (p.originalBadgeEl) p.originalBadgeEl.style.display = 'none';
+  if (p.originalToggleBtnEl) p.originalToggleBtnEl.textContent = 'Show original';
   p.renameInputEl.value = p.customName || '';
   p.renameLockEl.checked = p.nameLocked;
   p.renameFieldsEl.classList.remove('open');
@@ -326,13 +329,19 @@ resizeDpi.addEventListener('change', () => {
   updateResizeInfo();
   if (processed.length > 0) reprocessAll();
 });
+function updateResizeFillVisibility() {
+  const fitBtn = resizeFitToggle.querySelector('.seg-btn.active');
+  resizeFillFields.style.display = (fitBtn && fitBtn.dataset.fit === 'fit') ? 'block' : 'none';
+}
 resizeFitToggle.addEventListener('click', (e) => {
   const btn = e.target.closest('.seg-btn');
   if (!btn) return;
   setActiveSeg(resizeFitToggle, 'fit', btn.dataset.fit);
+  updateResizeFillVisibility();
   updateResizeInfo();
   if (processed.length > 0) reprocessAll();
 });
+updateResizeFillVisibility();
 resizeFillToggle.addEventListener('click', (e) => {
   const btn = e.target.closest('.seg-btn');
   if (!btn) return;
@@ -633,11 +642,21 @@ function buildName(pattern, { index, originalBase, dateObj, quality, originalWid
   }
   out = out.replaceAll('$S', presetStr);
 
-  return out;
+  return sanitizeFilename(out);
+}
+
+// Strips characters that aren't valid in filenames on Windows, macOS, or
+// Linux (Windows is the strictest, so its rule set covers all three):
+// < > : " / \ | ? * and control characters, plus trailing dots/spaces
+// (Windows can't have those at the end of a name).
+function sanitizeFilename(name) {
+  return name
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+    .replace(/[. ]+$/, '');
 }
 
 function computeName(originalName, index, dateObj, quality, originalWidth, originalHeight, outputWidth, outputHeight) {
-  const originalBase = originalName.replace(/\.[^.]+$/, '');
+  const originalBase = sanitizeFilename(originalName.replace(/\.[^.]+$/, ''));
   const pattern = patternInput.value.trim();
   let base = originalBase;
   if (renameEnabled.checked && pattern) {
@@ -663,7 +682,7 @@ updatePreview();
 function updateAllNames() {
   processed.forEach(p => {
     if (p.nameLocked) {
-      p.baseName = (p.customName || p.originalName.replace(/\.[^.]+$/, '')) + '.jpg';
+      p.baseName = (p.customName || sanitizeFilename(p.originalName.replace(/\.[^.]+$/, ''))) + '.jpg';
     } else {
       p.baseName = computeName(p.originalName, p.index, p.dateObj, p.quality, p.originalWidth, p.originalHeight, p.outputWidth, p.outputHeight);
     }
@@ -1304,6 +1323,7 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
     if (current) {
       URL.revokeObjectURL(current.url);
       URL.revokeObjectURL(current.thumbUrl);
+      if (current.originalFileUrl) URL.revokeObjectURL(current.originalFileUrl);
       if (openItemId === id) openItemId = null;
     }
     row.remove();
@@ -1321,8 +1341,21 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
   detail.className = 'item-detail';
   detail.style.display = 'none';
 
+  const imageWrap = document.createElement('div');
+  imageWrap.className = 'item-detail-image-wrap';
   const detailImg = document.createElement('img');
-  detail.appendChild(detailImg);
+  imageWrap.appendChild(detailImg);
+  const originalBadge = document.createElement('span');
+  originalBadge.className = 'original-badge';
+  originalBadge.textContent = 'Original';
+  originalBadge.style.display = 'none';
+  imageWrap.appendChild(originalBadge);
+  const originalToggleBtn = document.createElement('button');
+  originalToggleBtn.type = 'button';
+  originalToggleBtn.className = 'original-toggle-btn';
+  originalToggleBtn.textContent = 'Show original';
+  imageWrap.appendChild(originalToggleBtn);
+  detail.appendChild(imageWrap);
 
   const actions = document.createElement('div');
   actions.className = 'item-detail-actions';
@@ -1368,9 +1401,11 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
   renameFields.appendChild(renameLockRow);
   renameFields.appendChild(renameSaveBtn);
   detail.appendChild(renameFields);
-  // Typing a custom name implies you want it kept — auto-check the lock,
-  // though the user can still manually uncheck it before saving.
-  renameInput.addEventListener('input', () => { renameLock.checked = true; });
+  // Typing a custom name implies you want it kept — auto-check the lock;
+  // clearing the field back out auto-unchecks it again.
+  renameInput.addEventListener('input', () => {
+    renameLock.checked = renameInput.value.trim().length > 0;
+  });
 
   row.appendChild(itemRow);
   row.appendChild(detail);
@@ -1382,12 +1417,35 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
     dateObj, quality, rotation: 0, originalWidth, originalHeight, outputWidth, outputHeight,
     customName: null, nameLocked: false,
     detailEl: detail, detailImgEl: detailImg, renameFieldsEl: renameFields,
-    renameInputEl: renameInput, renameLockEl: renameLock
+    renameInputEl: renameInput, renameLockEl: renameLock,
+    showingOriginal: false, originalFileUrl: null,
+    originalBadgeEl: originalBadge, originalToggleBtnEl: originalToggleBtn
   };
   processed.push(item);
 
+  function resetOriginalView() {
+    item.showingOriginal = false;
+    originalBadge.style.display = 'none';
+    originalToggleBtn.textContent = 'Show original';
+  }
+
+  originalToggleBtn.addEventListener('click', () => {
+    item.showingOriginal = !item.showingOriginal;
+    if (item.showingOriginal) {
+      if (!item.originalFileUrl) item.originalFileUrl = URL.createObjectURL(item.file);
+      detailImg.src = item.originalFileUrl;
+      originalBadge.style.display = 'inline-block';
+      originalToggleBtn.textContent = 'Show result';
+    } else {
+      detailImg.src = item.url;
+      originalBadge.style.display = 'none';
+      originalToggleBtn.textContent = 'Show original';
+    }
+  });
+
   rotateBtn.addEventListener('click', async () => {
     await rotateItem(item);
+    resetOriginalView();
     detailImg.src = item.url;
     showToast('Image rotated');
   });
@@ -1423,6 +1481,7 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
     renameInput.value = '';
     renameLock.checked = false;
     renameFields.classList.remove('open');
+    resetOriginalView();
     await reencodeItem(item);
     updateAllNames();
     detailImg.src = item.url;
@@ -1440,6 +1499,7 @@ clearAllBtn.addEventListener('click', () => {
   processed.forEach(p => {
     URL.revokeObjectURL(p.url);
     URL.revokeObjectURL(p.thumbUrl);
+    if (p.originalFileUrl) URL.revokeObjectURL(p.originalFileUrl);
   });
   processed = [];
   list.innerHTML = '';
@@ -1472,6 +1532,7 @@ resetAllBtn.addEventListener('click', async () => {
   resizeDpi.value = '300';
   setActiveSeg(resizeFitToggle, 'fit', 'crop');
   setActiveSeg(resizeFillToggle, 'fill', 'white');
+  updateResizeFillVisibility();
   updateResizeSubfieldsVisibility();
   updateResizeInfo();
 
