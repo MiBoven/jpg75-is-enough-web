@@ -87,6 +87,9 @@ Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not native
 
 ## Changelog
 
+### 1.8.1 — 2026-09-18 — Image always full width (height adapts)
+- The expanded item image now always spans full width — for portrait images (or a landscape photo rotated 90°), the panel's height adapts to the image instead of the image being squeezed into a fixed-height box with bars on the sides
+
 ### 1.8.0 — 2026-09-18 — Full-width item image, dark mode in menu, app.js
 - Fixed the expanded item image not actually filling the width — a more general `.item img` rule (sized for the small list thumbnail) was overriding it. Now uses an explicit width **and** height (not just a max-height), so it always spans the full width and never needs scrolling, including right after a rotation flips it between landscape and portrait
 - Moved the Dark mode toggle out of the header into the ⋮-menu (alongside Export and About), matching the other apps in the suite; it now shows as a "Dark mode" / "Light mode" menu item reflecting the action it performs
