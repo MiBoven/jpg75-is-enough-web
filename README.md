@@ -60,12 +60,13 @@ Each file is decoded with `createImageBitmap()` using `{ imageOrientation: 'from
 
 ## Files
 
-- `index.html` — markup and app logic
+- `index.html` — markup only
 - `style.css` — all styling
+- `app.js` — application logic
 - `logo.png` — app logo shown in the header
 - `netlify.toml` — base security headers for deployment (optional)
 - `site.webmanifest` — PWA metadata (name, theme color, icons) used when someone adds the app to their home screen
-- Push all files to the repo root; `index.html` links to `style.css`, `logo.png`, and the icon files below with relative paths
+- Push all files to the repo root; `index.html` links to `style.css`, `app.js`, `logo.png`, and the icon files below with relative paths
 
 ## Favicon
 
@@ -85,6 +86,11 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.8.0 — 2026-09-18 — Full-width item image, dark mode in menu, app.js
+- Fixed the expanded item image not actually filling the width — a more general `.item img` rule (sized for the small list thumbnail) was overriding it. Now uses an explicit width **and** height (not just a max-height), so it always spans the full width and never needs scrolling, including right after a rotation flips it between landscape and portrait
+- Moved the Dark mode toggle out of the header into the ⋮-menu (alongside Export and About), matching the other apps in the suite; it now shows as a "Dark mode" / "Light mode" menu item reflecting the action it performs
+- Split the JavaScript out of `index.html` into its own `app.js` file — `index.html` is markup only now
 
 ### 1.7.1 — 2026-09-18 — Full icon set, PWA manifest
 - Added the correctly-themed logo/favicon set (replacing a placeholder set that turned out to belong to a different app): `favicon.ico`, `favicon.webp`, `favicon-16x16.png`, `favicon-32x32.png`, `apple-touch-icon.png`, `android-chrome-192x192.png`, `android-chrome-512x512.png`, and `logo.png`
