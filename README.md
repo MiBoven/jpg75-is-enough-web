@@ -64,24 +64,31 @@ Each file is decoded with `createImageBitmap()` using `{ imageOrientation: 'from
 - `style.css` — all styling
 - `logo.png` — app logo shown in the header
 - `netlify.toml` — base security headers for deployment (optional)
-- Push all files to the repo root; `index.html` links to `style.css` and `logo.png` with relative paths
+- `site.webmanifest` — PWA metadata (name, theme color, icons) used when someone adds the app to their home screen
+- Push all files to the repo root; `index.html` links to `style.css`, `logo.png`, and the icon files below with relative paths
 
 ## Favicon
 
-`index.html` already references these files at the repo root (add them yourself — they aren't included):
+`index.html` already references all of these at the repo root:
 
 - `favicon.ico`
+- `favicon.webp`
 - `favicon-16x16.png`
 - `favicon-32x32.png`
 - `apple-touch-icon.png` (180×180, used for "Add to Home Screen" on iOS)
+- `android-chrome-192x192.png` / `android-chrome-512x512.png` (referenced by `site.webmanifest`, used for "Add to Home Screen" on Android)
 
-If any file is missing, browsers just silently skip it — nothing breaks, you'll just see a generic icon until they're added.
+If any file is missing, browsers just silently skip it — nothing breaks, you'll just see a generic icon until it's added.
 
 ## Browser support
 
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.7.1 — 2026-09-18 — Full icon set, PWA manifest
+- Added the correctly-themed logo/favicon set (replacing a placeholder set that turned out to belong to a different app): `favicon.ico`, `favicon.webp`, `favicon-16x16.png`, `favicon-32x32.png`, `apple-touch-icon.png`, `android-chrome-192x192.png`, `android-chrome-512x512.png`, and `logo.png`
+- Added `site.webmanifest` (named "JPG75 is Enough" / "JPG75") and linked it from `index.html`, so "Add to Home Screen" on Android gets a proper app icon and name instead of a generic one
 
 ### 1.7.0 — 2026-09-17 — Inline item panel, live resize preview, DPI choice
 - Replaced the modal-based enlarged preview with an **inline expandable panel** per list item — tapping an item expands it in place (no popup, no scrolling needed to see the whole image); opening another item closes the previous one
