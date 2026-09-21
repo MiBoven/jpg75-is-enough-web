@@ -92,6 +92,10 @@ Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not native
 
 ## Changelog
 
+### 1.10.1 — 2026-09-18 — Modal close button always visible, original-toggle position
+- The About and Naming pattern modals now have an × in the top-right corner too (not just the bottom Close button), and both stay fixed in place while only the middle content scrolls — so the close controls are always visible, even on a long modal on a short screen
+- Moved the **Show original** button from the bottom-right to the top-right of the expanded image, with the "Original" badge moved to the top-left so they don't overlap
+
 ### 1.10.0 — 2026-09-18 — Show original, filename sanitizing, UI polish
 - Added a **Show original** button in the expanded item view (bottom-right of the image) to compare against the untouched source file, with an "Original" badge while active
 - Renamed filenames are now sanitized to characters valid on Windows/macOS/Linux (`< > : " / \ | ? *` and trailing dots/spaces are stripped), for both the global Rename pattern and per-image custom names
