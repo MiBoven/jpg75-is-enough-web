@@ -376,7 +376,7 @@ async function reprocessAll() {
 async function reencodeItem(p) {
   let output;
   try {
-    output = await buildOutput(p.file, p.rotation);
+    output = await buildOutput(p.file, p.rotation, p.watermark !== false);
   } catch (err) {
     return; // leave the existing blob untouched if the file can't be re-read
   }
@@ -1208,13 +1208,18 @@ function rotateSource(source, angleDeg) {
 // Used for the initial conversion, live re-encodes when Quality/Resize
 // change, and single-image rotation — always re-decoding from the original
 // file, never compounding loss on top of a previous JPG output.
-async function buildOutput(file, rotation) {
+async function buildOutput(file, rotation, useWatermark = true) {
   const source = await loadSource(file);
   const originalWidth = source.width;
   const originalHeight = source.height;
   const rotated = rotateSource(source, rotation);
   const canvas = buildResizedCanvas(rotated);
   source.close();
+
+  // The watermark is drawn last, once, onto the finished full-resolution
+  // canvas — so the photo is never resampled again and the watermark is
+  // rasterized directly at its final pixel size.
+  if (useWatermark && watermarkActive()) await applyWatermark(canvas);
 
   const quality = parseInt(qualitySlider.value) / 100;
   let blob = await canvasToBlob(canvas, quality);
@@ -1370,6 +1375,19 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
   actions.appendChild(resetBtn);
   detail.appendChild(actions);
 
+  // Per-image watermark switch — only shown while a watermark is active.
+  const wmRow = document.createElement('div');
+  wmRow.className = 'toggle-row item-wm-row';
+  wmRow.style.display = watermarkActive() ? '' : 'none';
+  const wmRowLabel = document.createElement('label');
+  wmRowLabel.textContent = 'Watermark on this image';
+  const wmCheck = document.createElement('input');
+  wmCheck.type = 'checkbox';
+  wmCheck.checked = true;
+  wmRow.appendChild(wmRowLabel);
+  wmRow.appendChild(wmCheck);
+  detail.appendChild(wmRow);
+
   const renameFields = document.createElement('div');
   renameFields.className = 'item-rename-fields';
   const renameRow = document.createElement('div');
@@ -1419,7 +1437,8 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
     detailEl: detail, detailImgEl: detailImg, renameFieldsEl: renameFields,
     renameInputEl: renameInput, renameLockEl: renameLock,
     showingOriginal: false, originalFileUrl: null,
-    originalBadgeEl: originalBadge, originalToggleBtnEl: originalToggleBtn
+    originalBadgeEl: originalBadge, originalToggleBtnEl: originalToggleBtn,
+    watermark: true, wmRowEl: wmRow, wmCheckEl: wmCheck
   };
   processed.push(item);
 
@@ -1428,6 +1447,13 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
     originalBadge.style.display = 'none';
     originalToggleBtn.textContent = 'Show original';
   }
+
+  wmCheck.addEventListener('change', async () => {
+    item.watermark = wmCheck.checked;
+    resetOriginalView();
+    await reencodeItem(item);
+    showToast(item.watermark ? 'Watermark on' : 'Watermark off for this image');
+  });
 
   originalToggleBtn.addEventListener('click', () => {
     item.showingOriginal = !item.showingOriginal;
@@ -1478,6 +1504,8 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
     item.customName = null;
     item.nameLocked = false;
     item.rotation = 0;
+    item.watermark = true;
+    wmCheck.checked = true;
     renameInput.value = '';
     renameLock.checked = false;
     renameFields.classList.remove('open');
@@ -1555,11 +1583,16 @@ resetAllBtn.addEventListener('click', async () => {
   localStorage.setItem('jpg75-exportTolerance', '15');
   document.getElementById('exportToleranceFieldLabel').classList.remove('is-modified');
 
-  // Per-image rotation and name overrides
+  // Watermark settings (the loaded watermark file itself stays)
+  resetWatermarkSettings();
+
+  // Per-image rotation, name overrides, and watermark switch
   processed.forEach(p => {
     p.rotation = 0;
     p.customName = null;
     p.nameLocked = false;
+    p.watermark = true;
+    if (p.wmCheckEl) p.wmCheckEl.checked = true;
     if (p.renameInputEl) p.renameInputEl.value = '';
     if (p.renameLockEl) p.renameLockEl.checked = false;
     if (p.renameFieldsEl) p.renameFieldsEl.classList.remove('open');
@@ -1601,3 +1634,624 @@ allBtn.addEventListener('click', async () => {
   a.download = 'jpg75.zip';
   a.click();
 });
+
+// ======================================================================
+// Watermark
+// ======================================================================
+// Drawn as the very last step onto the finished, full-resolution canvas
+// (see buildOutput), exactly once. SVGs are rasterized directly at their
+// final pixel size; PNG/WebP are downscaled in halving steps so nothing
+// aliases. Saturation and softness are computed in JS on the (small)
+// watermark itself rather than via ctx.filter, which Safari lacks.
+
+const WM_DEFAULTS = {
+  opacity: 50, saturation: 100, sizePct: 25, sizePx: 300,
+  marginPct: 3, marginPx: 40, softness: 0,
+  position: 'br', sizeMode: 'percent', marginMode: 'percent'
+};
+
+const wmEl = (id) => document.getElementById(id);
+const watermarkEnabled = wmEl('watermarkEnabled');
+const watermarkFields = wmEl('watermarkFields');
+const wmDrop = wmEl('wmDrop');
+const wmFileInput = wmEl('wmFileInput');
+const wmFileInfo = wmEl('wmFileInfo');
+const wmThumb = wmEl('wmThumb');
+const wmName = wmEl('wmName');
+const wmDims = wmEl('wmDims');
+const wmRemoveBtn = wmEl('wmRemoveBtn');
+const wmUpscaleHint = wmEl('wmUpscaleHint');
+const wmPreview = wmEl('wmPreview');
+const wmOpacity = wmEl('wmOpacity');
+const wmOpacityLabel = wmEl('wmOpacityLabel');
+const wmSaturation = wmEl('wmSaturation');
+const wmSaturationLabel = wmEl('wmSaturationLabel');
+const wmSizeModeToggle = wmEl('wmSizeModeToggle');
+const wmSizePctFields = wmEl('wmSizePctFields');
+const wmSizePxFields = wmEl('wmSizePxFields');
+const wmSizePct = wmEl('wmSizePct');
+const wmSizePctLabel = wmEl('wmSizePctLabel');
+const wmSizePx = wmEl('wmSizePx');
+const wmMarginModeToggle = wmEl('wmMarginModeToggle');
+const wmMarginPctFields = wmEl('wmMarginPctFields');
+const wmMarginPxFields = wmEl('wmMarginPxFields');
+const wmMarginPct = wmEl('wmMarginPct');
+const wmMarginPctLabel = wmEl('wmMarginPctLabel');
+const wmMarginPx = wmEl('wmMarginPx');
+const wmSoftness = wmEl('wmSoftness');
+const wmSoftnessLabel = wmEl('wmSoftnessLabel');
+const wmPosRadios = document.querySelectorAll('input[name="wmPos"]');
+
+const wm = {
+  blob: null, name: '', kind: '', thumbUrl: null, img: null, svgText: '',
+  naturalW: 0, naturalH: 0, ready: false, id: 0
+};
+const wmCache = new Map();
+
+function watermarkActive() { return watermarkEnabled.checked && wm.ready; }
+
+// ---------- Remember the watermark file (IndexedDB, best-effort) ----------
+function wmDbOpen() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) return reject(new Error('IndexedDB unavailable'));
+    const req = indexedDB.open('jpg75', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('kv');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function wmDbPut(key, value) {
+  try {
+    const db = await wmDbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(value, key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (err) { /* remembering the file is a convenience, never required */ }
+}
+async function wmDbGet(key) {
+  try {
+    const db = await wmDbOpen();
+    const result = await new Promise((resolve, reject) => {
+      const req = db.transaction('kv').objectStore('kv').get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return result;
+  } catch (err) { return undefined; }
+}
+async function wmDbDelete(key) {
+  try {
+    const db = await wmDbOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').delete(key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (err) { /* ignore */ }
+}
+
+// ---------- Settings ----------
+function wmNum(v, fallback) { const n = parseFloat(v); return isNaN(n) ? fallback : n; }
+function getWmPosition() {
+  const r = document.querySelector('input[name="wmPos"]:checked');
+  return r ? r.value : WM_DEFAULTS.position;
+}
+function setWmPosition(v) { wmPosRadios.forEach(r => { r.checked = r.value === v; }); }
+function wmSegValue(container) {
+  const b = container.querySelector('.seg-btn.active');
+  return b ? b.dataset.mode : null;
+}
+function getWmSettings() {
+  return {
+    opacity: Math.min(100, Math.max(0, wmNum(wmOpacity.value, WM_DEFAULTS.opacity))),
+    saturation: Math.min(100, Math.max(0, wmNum(wmSaturation.value, WM_DEFAULTS.saturation))),
+    sizeMode: wmSegValue(wmSizeModeToggle) || WM_DEFAULTS.sizeMode,
+    sizePct: Math.max(1, wmNum(wmSizePct.value, WM_DEFAULTS.sizePct)),
+    sizePx: Math.max(1, wmNum(wmSizePx.value, WM_DEFAULTS.sizePx)),
+    marginMode: wmSegValue(wmMarginModeToggle) || WM_DEFAULTS.marginMode,
+    marginPct: Math.max(0, wmNum(wmMarginPct.value, WM_DEFAULTS.marginPct)),
+    marginPx: Math.max(0, wmNum(wmMarginPx.value, WM_DEFAULTS.marginPx)),
+    softness: Math.max(0, wmNum(wmSoftness.value, WM_DEFAULTS.softness)),
+    position: getWmPosition()
+  };
+}
+
+// ---------- Placement ----------
+// Percent values are relative to the image's SHORTER side, so a watermark
+// looks equally big on portrait and landscape photos. "Size" applies to the
+// watermark's longer side.
+function computeWatermarkPlacement(cw, ch, aspect, s) {
+  const base = Math.min(cw, ch);
+  const longSide = s.sizeMode === 'pixel' ? s.sizePx : base * s.sizePct / 100;
+  let w, h;
+  if (aspect >= 1) { w = longSide; h = longSide / aspect; } else { h = longSide; w = longSide * aspect; }
+  const fit = Math.min(1, cw / w, ch / h); // never larger than the image itself
+  w = Math.max(1, Math.round(w * fit));
+  h = Math.max(1, Math.round(h * fit));
+  const margin = s.marginMode === 'pixel' ? s.marginPx : base * s.marginPct / 100;
+  const row = s.position[0]; // t / m / b
+  const col = s.position[1]; // l / m / r
+  let x = col === 'l' ? margin : col === 'r' ? cw - w - margin : (cw - w) / 2;
+  let y = row === 't' ? margin : row === 'b' ? ch - h - margin : (ch - h) / 2;
+  x = Math.round(Math.max(0, Math.min(cw - w, x)));
+  y = Math.round(Math.max(0, Math.min(ch - h, y)));
+  return { x, y, w, h };
+}
+
+// ---------- Rasterizing the watermark at its final size ----------
+function parseSvgSize(text) {
+  const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+  if (doc.querySelector('parsererror')) return null;
+  const root = doc.documentElement;
+  if (!root || root.localName !== 'svg') return null;
+  const vb = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+  const hasVb = vb.length === 4 && vb.every(n => !isNaN(n)) && vb[2] > 0 && vb[3] > 0;
+  const rawW = root.getAttribute('width') || '';
+  const rawH = root.getAttribute('height') || '';
+  let w = rawW.includes('%') ? NaN : parseFloat(rawW);
+  let h = rawH.includes('%') ? NaN : parseFloat(rawH);
+  if (!(w > 0 && h > 0)) {
+    if (!hasVb) return null;
+    w = vb[2]; h = vb[3];
+  }
+  return { w, h };
+}
+
+async function loadSvgAtSize(w, h) {
+  const doc = new DOMParser().parseFromString(wm.svgText, 'image/svg+xml');
+  const root = doc.documentElement;
+  if (!root.getAttribute('viewBox')) root.setAttribute('viewBox', `0 0 ${wm.naturalW} ${wm.naturalH}`);
+  root.setAttribute('width', String(w));
+  root.setAttribute('height', String(h));
+  const svg = new XMLSerializer().serializeToString(root);
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  try { return await loadImage(url); } finally { URL.revokeObjectURL(url); }
+}
+
+function drawScaledStepwise(target, src, sw, sh) {
+  const tw = target.width, th = target.height;
+  let cur = src, cw = sw, ch = sh;
+  while (cw >= tw * 2 && ch >= th * 2) {
+    const nw = Math.max(tw, Math.ceil(cw / 2));
+    const nh = Math.max(th, Math.ceil(ch / 2));
+    const c = document.createElement('canvas');
+    c.width = nw; c.height = nh;
+    const cx = c.getContext('2d');
+    cx.imageSmoothingQuality = 'high';
+    cx.drawImage(cur, 0, 0, nw, nh);
+    cur = c; cw = nw; ch = nh;
+  }
+  const tctx = target.getContext('2d');
+  tctx.imageSmoothingQuality = 'high';
+  tctx.drawImage(cur, 0, 0, tw, th);
+}
+
+function desaturateCanvas(canvas, s) {
+  const ctx = canvas.getContext('2d');
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    d[i] = g + (d[i] - g) * s;
+    d[i + 1] = g + (d[i + 1] - g) * s;
+    d[i + 2] = g + (d[i + 2] - g) * s;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function boxBlurH(src, dst, w, h, r) {
+  const div = 1 / (2 * r + 1);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let c = 0; c < 4; c++) {
+      let sum = 0;
+      for (let x = 0; x <= r && x < w; x++) sum += src[(row + x) * 4 + c];
+      for (let x = 0; x < w; x++) {
+        dst[(row + x) * 4 + c] = sum * div;
+        const add = x + r + 1, sub = x - r;
+        if (add < w) sum += src[(row + add) * 4 + c];
+        if (sub >= 0) sum -= src[(row + sub) * 4 + c];
+      }
+    }
+  }
+}
+function boxBlurV(src, dst, w, h, r) {
+  const div = 1 / (2 * r + 1);
+  for (let x = 0; x < w; x++) {
+    for (let c = 0; c < 4; c++) {
+      let sum = 0;
+      for (let y = 0; y <= r && y < h; y++) sum += src[(y * w + x) * 4 + c];
+      for (let y = 0; y < h; y++) {
+        dst[(y * w + x) * 4 + c] = sum * div;
+        const add = y + r + 1, sub = y - r;
+        if (add < h) sum += src[(add * w + x) * 4 + c];
+        if (sub >= 0) sum -= src[(sub * w + x) * 4 + c];
+      }
+    }
+  }
+}
+// Three box-blur passes ≈ a gaussian blur. Works on premultiplied alpha so
+// soft edges don't pick up dark fringes.
+function blurImageData(imgData, radius) {
+  const w = imgData.width, h = imgData.height, d = imgData.data;
+  const n = w * h;
+  const a = new Float32Array(n * 4);
+  const b = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    const al = d[o + 3] / 255;
+    a[o] = d[o] * al; a[o + 1] = d[o + 1] * al; a[o + 2] = d[o + 2] * al; a[o + 3] = d[o + 3];
+  }
+  for (let pass = 0; pass < 3; pass++) {
+    boxBlurH(a, b, w, h, radius);
+    boxBlurV(b, a, w, h, radius);
+  }
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    const alpha = a[o + 3];
+    if (alpha > 0.5) {
+      const f = 255 / alpha;
+      d[o] = a[o] * f; d[o + 1] = a[o + 1] * f; d[o + 2] = a[o + 2] * f; d[o + 3] = alpha;
+    } else {
+      d[o] = d[o + 1] = d[o + 2] = 0; d[o + 3] = 0;
+    }
+  }
+}
+
+// Returns { canvas, pad }: the watermark rasterized at exactly tw×th, with
+// saturation/softness applied. With softness the canvas is `pad` pixels
+// larger on every side so the soft edge isn't clipped.
+async function renderWatermarkCanvas(tw, th, saturation, softness) {
+  const base = document.createElement('canvas');
+  base.width = tw; base.height = th;
+  if (wm.kind === 'svg') {
+    const img = await loadSvgAtSize(tw, th);
+    const bctx = base.getContext('2d');
+    bctx.imageSmoothingQuality = 'high';
+    bctx.drawImage(img, 0, 0, tw, th);
+  } else {
+    drawScaledStepwise(base, wm.img, wm.naturalW, wm.naturalH);
+  }
+  if (saturation < 100) desaturateCanvas(base, saturation / 100);
+  if (softness <= 0) return { canvas: base, pad: 0 };
+
+  const radius = Math.max(1, Math.round(softness / 100 * Math.min(tw, th) * 0.5));
+  const pad = radius * 3;
+  const out = document.createElement('canvas');
+  out.width = tw + pad * 2; out.height = th + pad * 2;
+  const octx = out.getContext('2d');
+  octx.drawImage(base, pad, pad);
+  const data = octx.getImageData(0, 0, out.width, out.height);
+  blurImageData(data, radius);
+  octx.putImageData(data, 0, 0);
+  return { canvas: out, pad };
+}
+
+function getWatermarkCanvas(tw, th, saturation, softness) {
+  const key = `${wm.id}|${tw}x${th}|${saturation}|${softness}`;
+  if (wmCache.has(key)) return wmCache.get(key);
+  const promise = renderWatermarkCanvas(tw, th, saturation, softness);
+  promise.catch(() => wmCache.delete(key));
+  wmCache.set(key, promise);
+  if (wmCache.size > 12) wmCache.delete(wmCache.keys().next().value);
+  return promise;
+}
+
+async function applyWatermark(canvas) {
+  try {
+    const s = getWmSettings();
+    const place = computeWatermarkPlacement(canvas.width, canvas.height, wm.naturalW / wm.naturalH, s);
+    const { canvas: wmc, pad } = await getWatermarkCanvas(place.w, place.h, s.saturation, s.softness);
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.globalAlpha = s.opacity / 100;
+    ctx.drawImage(wmc, place.x - pad, place.y - pad);
+    ctx.restore();
+  } catch (err) {
+    console.warn('Watermark could not be drawn:', err); // the photo itself still gets saved
+  }
+}
+
+// ---------- Loading / removing the watermark file ----------
+async function setWatermarkFile(file, { persist = true } = {}) {
+  const name = file.name || 'watermark';
+  const lower = name.toLowerCase();
+  const isSvg = file.type === 'image/svg+xml' || lower.endsWith('.svg');
+  const isRaster = file.type === 'image/png' || file.type === 'image/webp' || /\.(png|webp)$/.test(lower);
+  if (!isSvg && !isRaster) { showToast('Please choose a PNG, SVG or WebP file'); return; }
+
+  const thumbUrl = URL.createObjectURL(file);
+  let img = null, svgText = '', naturalW, naturalH;
+  try {
+    if (isSvg) {
+      svgText = await file.text();
+      const size = parseSvgSize(svgText);
+      if (!size) throw new Error('svg size');
+      naturalW = size.w; naturalH = size.h;
+    } else {
+      img = await loadImage(thumbUrl);
+      naturalW = img.naturalWidth; naturalH = img.naturalHeight;
+      if (!naturalW || !naturalH) throw new Error('raster size');
+    }
+  } catch (err) {
+    URL.revokeObjectURL(thumbUrl);
+    showToast(isSvg ? 'This SVG needs a width/height or a viewBox' : "Couldn't read that image");
+    return;
+  }
+
+  if (wm.thumbUrl) URL.revokeObjectURL(wm.thumbUrl);
+  Object.assign(wm, {
+    blob: file, name, kind: isSvg ? 'svg' : 'raster', thumbUrl, img, svgText,
+    naturalW, naturalH, ready: true, id: wm.id + 1
+  });
+  wmCache.clear();
+  wmThumb.src = thumbUrl;
+  if (persist) {
+    wmDbPut('file', { blob: file, name, type: file.type });
+    showToast('Watermark loaded');
+  }
+  wmCommit();
+}
+
+function clearWatermarkFile() {
+  const wasActive = watermarkActive();
+  if (wm.thumbUrl) URL.revokeObjectURL(wm.thumbUrl);
+  Object.assign(wm, {
+    blob: null, name: '', kind: '', thumbUrl: null, img: null, svgText: '',
+    naturalW: 0, naturalH: 0, ready: false, id: wm.id + 1
+  });
+  wmCache.clear();
+  wmThumb.removeAttribute('src');
+  wmDbDelete('file');
+  wmCommit(wasActive); // items that already carry the watermark need re-encoding
+}
+
+// ---------- UI state ----------
+function updateWatermarkInfo() {
+  const has = wm.ready;
+  wmDrop.style.display = has ? 'none' : 'block';
+  wmFileInfo.style.display = has ? 'flex' : 'none';
+  wmUpscaleHint.style.display = 'none';
+  if (!has) return;
+  wmName.textContent = wm.name;
+  wmDims.textContent = wm.kind === 'svg' ? 'SVG · vector, stays sharp at any size' : `${wm.naturalW} × ${wm.naturalH} px`;
+  if (wm.kind === 'raster' && processed.length > 0) {
+    const p = processed[0];
+    const place = computeWatermarkPlacement(p.outputWidth, p.outputHeight, wm.naturalW / wm.naturalH, getWmSettings());
+    const factor = place.w / wm.naturalW;
+    if (factor > 1.05) {
+      wmUpscaleHint.textContent = `Heads up: this watermark is ${wm.naturalW}×${wm.naturalH} px but is drawn at about ${place.w}×${place.h} px on the first image (×${factor.toFixed(1)}), so it may look soft. A larger PNG or an SVG stays sharp.`;
+      wmUpscaleHint.style.display = 'block';
+    }
+  }
+}
+
+function updateWatermarkItemRows() {
+  const on = watermarkActive();
+  processed.forEach(p => { if (p.wmRowEl) p.wmRowEl.style.display = on ? '' : 'none'; });
+}
+
+function updateWmModeVisibility() {
+  const sizePx = wmSegValue(wmSizeModeToggle) === 'pixel';
+  wmSizePctFields.style.display = sizePx ? 'none' : 'flex';
+  wmSizePxFields.style.display = sizePx ? 'flex' : 'none';
+  const marginPx = wmSegValue(wmMarginModeToggle) === 'pixel';
+  wmMarginPctFields.style.display = marginPx ? 'none' : 'flex';
+  wmMarginPxFields.style.display = marginPx ? 'flex' : 'none';
+}
+
+// Called when a setting is committed (slider released, field left, button
+// pressed) — refreshes hints/preview and re-encodes already-loaded images.
+function wmCommit(forceReprocess = false) {
+  updateWatermarkInfo();
+  updateWatermarkItemRows();
+  wmQueuePreview();
+  if (processed.length > 0 && (forceReprocess || watermarkActive())) reprocessAll();
+}
+
+// ---------- Live preview (first image, or a placeholder) ----------
+function resizeSignature() {
+  const fit = resizeFitToggle.querySelector('.seg-btn.active');
+  const fill = resizeFillToggle.querySelector('.seg-btn.active');
+  return [
+    resizeEnabled.checked, currentResizeMode(), resizePercentLabel.value, resizeWidth.value,
+    resizeHeight.value, resizeLockRatio.checked, resizePreset.value, resizeDpi.value,
+    fit && fit.dataset.fit, fill && fill.dataset.fill
+  ].join('|');
+}
+
+function buildPlaceholderBase() {
+  const c = document.createElement('canvas');
+  c.width = 640; c.height = 427;
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 640, 427);
+  g.addColorStop(0, '#5b6b7a'); g.addColorStop(1, '#2f3a45');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 640, 427);
+  return { canvas: c, fullW: 3000, fullH: 2000 };
+}
+
+async function buildPreviewBase(p) {
+  const source = await loadSource(p.file);
+  const rotated = rotateSource(source, p.rotation);
+  const full = buildResizedCanvas(rotated);
+  source.close();
+  const k = Math.min(1, 640 / Math.max(full.width, full.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(full.width * k));
+  c.height = Math.max(1, Math.round(full.height * k));
+  c.getContext('2d').drawImage(full, 0, 0, c.width, c.height);
+  return { canvas: c, fullW: full.width, fullH: full.height };
+}
+
+let wmPreviewBasePromise = null, wmPreviewBaseKey = '', wmPreviewToken = 0, wmPreviewQueued = false;
+function getPreviewBase() {
+  const p = processed[0];
+  const key = p ? `${p.id}|${p.rotation}|${resizeSignature()}` : 'placeholder';
+  if (wmPreviewBasePromise && key === wmPreviewBaseKey) return wmPreviewBasePromise;
+  wmPreviewBaseKey = key;
+  wmPreviewBasePromise = p
+    ? buildPreviewBase(p).catch(() => buildPlaceholderBase())
+    : Promise.resolve(buildPlaceholderBase());
+  return wmPreviewBasePromise;
+}
+
+async function renderWatermarkPreview() {
+  if (!watermarkEnabled.checked) return;
+  const token = ++wmPreviewToken;
+  const base = await getPreviewBase();
+  if (token !== wmPreviewToken) return;
+  const cw = base.canvas.width, ch = base.canvas.height;
+  wmPreview.width = cw; wmPreview.height = ch;
+  const ctx = wmPreview.getContext('2d');
+  ctx.drawImage(base.canvas, 0, 0);
+  if (!wm.ready) return;
+  const s = getWmSettings();
+  const place = computeWatermarkPlacement(base.fullW, base.fullH, wm.naturalW / wm.naturalH, s);
+  const k = cw / base.fullW;
+  const w = Math.max(1, Math.round(place.w * k));
+  const h = Math.max(1, Math.round(place.h * k));
+  try {
+    const { canvas: wmc, pad } = await renderWatermarkCanvas(w, h, s.saturation, s.softness);
+    if (token !== wmPreviewToken) return;
+    ctx.save();
+    ctx.globalAlpha = s.opacity / 100;
+    ctx.drawImage(wmc, Math.round(place.x * k) - pad, Math.round(place.y * k) - pad);
+    ctx.restore();
+  } catch (err) { /* preview is best-effort */ }
+}
+function wmQueuePreview() {
+  if (wmPreviewQueued) return;
+  wmPreviewQueued = true;
+  requestAnimationFrame(() => { wmPreviewQueued = false; renderWatermarkPreview(); });
+}
+
+// ---------- Wiring ----------
+const wmControls = [];
+function setupWmControl(key, def, inputEl, labelEl, onApply) {
+  const storageKey = 'jpg75-wm-' + key;
+  const stored = localStorage.getItem(storageKey);
+  if (stored !== null) inputEl.value = stored;
+  const apply = () => {
+    if (onApply) onApply();
+    if (labelEl) labelEl.classList.toggle('is-modified', String(inputEl.value) !== String(def));
+  };
+  inputEl.addEventListener('input', () => {
+    localStorage.setItem(storageKey, inputEl.value);
+    apply();
+    wmQueuePreview();
+  });
+  inputEl.addEventListener('change', () => wmCommit());
+  if (labelEl) {
+    labelEl.addEventListener('click', () => {
+      inputEl.value = def;
+      localStorage.setItem(storageKey, String(def));
+      apply();
+      wmCommit();
+    });
+  }
+  apply();
+  wmControls.push({ inputEl, def, storageKey, apply });
+}
+
+setupWmControl('opacity', WM_DEFAULTS.opacity, wmOpacity, wmEl('wmOpacityFieldLabel'),
+  () => { wmOpacityLabel.textContent = wmOpacity.value + '%'; });
+setupWmControl('saturation', WM_DEFAULTS.saturation, wmSaturation, wmEl('wmSaturationFieldLabel'),
+  () => { wmSaturationLabel.textContent = wmSaturation.value + '%'; });
+setupWmControl('sizePct', WM_DEFAULTS.sizePct, wmSizePct, wmEl('wmSizePctFieldLabel'),
+  () => { wmSizePctLabel.textContent = wmSizePct.value + '%'; });
+setupWmControl('sizePx', WM_DEFAULTS.sizePx, wmSizePx, wmEl('wmSizePxFieldLabel'));
+setupWmControl('marginPct', WM_DEFAULTS.marginPct, wmMarginPct, wmEl('wmMarginPctFieldLabel'),
+  () => { wmMarginPctLabel.textContent = wmMarginPct.value + '%'; });
+setupWmControl('marginPx', WM_DEFAULTS.marginPx, wmMarginPx, wmEl('wmMarginPxFieldLabel'));
+setupWmControl('softness', WM_DEFAULTS.softness, wmSoftness, wmEl('wmSoftnessFieldLabel'),
+  () => { wmSoftnessLabel.textContent = wmSoftness.value + '%'; });
+
+function setupWmSegment(container, storageKey, def) {
+  setActiveSeg(container, 'mode', localStorage.getItem(storageKey) || def);
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('.seg-btn');
+    if (!btn) return;
+    setActiveSeg(container, 'mode', btn.dataset.mode);
+    localStorage.setItem(storageKey, btn.dataset.mode);
+    updateWmModeVisibility();
+    wmCommit();
+  });
+}
+setupWmSegment(wmSizeModeToggle, 'jpg75-wm-sizeMode', WM_DEFAULTS.sizeMode);
+setupWmSegment(wmMarginModeToggle, 'jpg75-wm-marginMode', WM_DEFAULTS.marginMode);
+updateWmModeVisibility();
+
+setWmPosition(localStorage.getItem('jpg75-wm-position') || WM_DEFAULTS.position);
+wmPosRadios.forEach(r => r.addEventListener('change', () => {
+  localStorage.setItem('jpg75-wm-position', r.value);
+  wmCommit();
+}));
+
+function resetWatermarkSettings() {
+  watermarkEnabled.checked = false;
+  watermarkFields.style.display = 'none';
+  wmControls.forEach(c => {
+    c.inputEl.value = c.def;
+    localStorage.setItem(c.storageKey, String(c.def));
+    c.apply();
+  });
+  setWmPosition(WM_DEFAULTS.position);
+  localStorage.setItem('jpg75-wm-position', WM_DEFAULTS.position);
+  setActiveSeg(wmSizeModeToggle, 'mode', WM_DEFAULTS.sizeMode);
+  localStorage.setItem('jpg75-wm-sizeMode', WM_DEFAULTS.sizeMode);
+  setActiveSeg(wmMarginModeToggle, 'mode', WM_DEFAULTS.marginMode);
+  localStorage.setItem('jpg75-wm-marginMode', WM_DEFAULTS.marginMode);
+  updateWmModeVisibility();
+  updateWatermarkInfo();
+  updateWatermarkItemRows();
+}
+
+watermarkEnabled.addEventListener('change', () => {
+  watermarkFields.style.display = watermarkEnabled.checked ? 'block' : 'none';
+  updateWatermarkInfo();
+  updateWatermarkItemRows();
+  wmQueuePreview();
+  if (processed.length > 0 && wm.ready) reprocessAll();
+});
+
+// On touch devices use the plain file browser (the photo picker has no
+// SVGs); on desktop the dialog can be filtered to the supported types.
+wmFileInput.accept = window.matchMedia('(pointer: coarse)').matches
+  ? '*/*'
+  : 'image/png,image/svg+xml,image/webp,.svg';
+wmDrop.addEventListener('click', () => wmFileInput.click());
+['dragenter', 'dragover'].forEach(ev => wmDrop.addEventListener(ev, e => {
+  e.preventDefault(); wmDrop.classList.add('drag');
+}));
+['dragleave', 'drop'].forEach(ev => wmDrop.addEventListener(ev, e => {
+  e.preventDefault(); wmDrop.classList.remove('drag');
+}));
+wmDrop.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) setWatermarkFile(f);
+});
+wmFileInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) setWatermarkFile(f);
+  wmFileInput.value = '';
+});
+wmRemoveBtn.addEventListener('click', clearWatermarkFile);
+
+// Restore the remembered watermark file, if there is one.
+(async () => {
+  const rec = await wmDbGet('file');
+  if (rec && rec.blob) {
+    await setWatermarkFile(
+      new File([rec.blob], rec.name || 'watermark', { type: rec.type || rec.blob.type }),
+      { persist: false }
+    );
+  }
+})();

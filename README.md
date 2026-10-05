@@ -57,7 +57,16 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
   - Changing any resize setting re-encodes already-converted images in place, same as Quality
 - **Rotate, rename, and reset — per image**: expand an item in the list to rotate it 90° at a time (confirmed with a toast), give it a custom name — the same placeholders as the global Rename pattern work here too, except `#` — that's optionally **locked** so the "Rename files" pattern never overwrites it (typing a name auto-checks the lock, clearing it back out auto-unchecks it), compare against the untouched file with **Show original** (bottom-right of the expanded image, with an "Original" badge while active), or reset that one image's rotation and custom name back to default
 - Renamed filenames — from both the global pattern and per-image custom names — are sanitized to characters valid on Windows, macOS, and Linux
-- **Reset all**: restores Quality, Resize, Rename, and Export settings (and every image's rotation and per-image name override) back to their defaults — the uploaded/converted images themselves stay in the list, unlike **Remove all**
+- **Watermark** *(optional card under Rename files)*: load a **PNG, SVG, or WebP** by drag & drop or file selection (on phones always the plain file browser, since the photo picker has no SVGs) and stamp it onto every image
+  - **Opacity** (default 50%), **Saturation** (100% = as loaded, 0% = black & white), and **Softness** (0–10%, softens the watermark's edges; default 0)
+  - **Size** in percent (default 25%) or pixels — it applies to the watermark's longer side; percent values are relative to the image's *shorter* side, so a watermark looks equally big on portrait and landscape photos
+  - **Position** via a 3×3 grid (default bottom right) and **Margin** in percent (default 3%) or pixels; the margin only applies on the edges the watermark is anchored to
+  - Quality: the watermark is drawn as the very last step, once, onto the finished full-resolution image (after resize and rotation) — so the photo is never resampled again. SVGs are rasterized directly at their final pixel size and stay sharp; PNG/WebP are downscaled in halving steps, with a hint if one would have to be enlarged
+  - A live mini-preview in the card shows the first loaded image (or a placeholder) with the watermark applied
+  - The watermark file is remembered between visits (stored locally in the browser, never uploaded) and can be removed with the ×; its settings are remembered too, with the usual click-the-label-to-reset
+  - Each image can opt out via **Watermark on this image** in its expanded panel. The PNG/WebP export includes the watermark automatically; **Show original** shows the image without it
+  - SVGs are loaded as images, so scripts and external resources inside them are never executed. They need a `width`/`height` or a `viewBox`, and text inside should be converted to paths (fonts aren't loaded)
+- **Reset all**: restores Quality, Resize, Rename, Watermark, and Export settings (and every image's rotation, per-image name override, and watermark switch) back to their defaults — the uploaded/converted images and the loaded watermark file stay, unlike **Remove all**
 
 ## How it works
 
@@ -91,6 +100,13 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.11.0 — 2026-10-05 — Watermark
+- Added an optional **Watermark** card under Rename files: load a PNG, SVG, or WebP (drag & drop or file selection) and apply it to every image with adjustable opacity, saturation, edge softness, size (percent of the image's shorter side, or pixels), a 3×3 position grid, and margin (percent or pixels)
+- The watermark is drawn last, once, at its final pixel size onto the finished full-resolution image, so the photo is never resampled again and SVGs stay perfectly sharp; saturation and softness are computed in JS rather than via `ctx.filter`, which Safari lacks
+- Live mini-preview in the card, plus a hint when a PNG would have to be enlarged
+- The watermark file is remembered between visits (locally, via IndexedDB) with a remove button; its settings persist like the other cards
+- Per-image **Watermark on this image** switch in the expanded item panel; **Reset all** resets the watermark settings (the loaded file stays) and re-enables it on every image
 
 ### 1.10.1 — 2026-09-18 — Modal close button always visible, original-toggle position
 - The About and Naming pattern modals now have an × in the top-right corner too (not just the bottom Close button), and both stay fixed in place while only the middle content scrolls — so the close controls are always visible, even on a long modal on a short screen
