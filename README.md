@@ -41,7 +41,7 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
 - Mobile-first layout — designed to be used from a phone
 - 100% client-side: no backend, no analytics, no image ever leaves the device
 - Original EXIF metadata (capture date, camera model, ISO, aperture, GPS, etc.) is preserved through the JPG conversion when the source file has it — re-encoding via `canvas` normally strips all of this
-- Photo **orientation** is preserved correctly: the image is decoded with EXIF orientation already applied, and the copied-back orientation tag is reset to "normal" so viewers don't rotate an already-correct image a second time
+- Photo **orientation** is preserved correctly: the image is decoded with EXIF orientation already applied, and the copied-back orientation tag is reset to "normal" so viewers don't rotate an already-correct image a second time. The thumbnail embedded in the original's EXIF data is dropped (it would show the old sensor orientation, without resize or watermark), so file managers like Windows Explorer build the preview from the converted image itself; the pixel dimensions stored in the EXIF are updated to the output size
 - **Export as other format** *(accessible via the ⋮-menu → "Export", closable with the × in its corner)*: convert the already-processed image (i.e. after the main Quality setting has been applied) to **PNG** or **WebP** instead
   - **PNG** supports a simple color-key transparency: pick a color and a tolerance (default 15%; 0% = exact match only)
   - **WebP** reuses the main Quality slider — no separate quality control
@@ -100,6 +100,11 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.11.1 — 2026-10-05 — Fix sideways thumbnails in file managers
+- Fixed converted photos showing a sideways preview thumbnail in file managers such as Windows Explorer while opening correctly: the copied EXIF block still contained the original's embedded thumbnail (in sensor orientation) but its orientation tag had been reset. That embedded thumbnail is now unlinked, so previews are generated from the converted image itself
+- The pixel dimensions recorded in the EXIF are now updated to the output size, instead of keeping the original's after a resize or rotation
+- Images converted with an earlier version keep the old thumbnail and need to be converted again to benefit from this
 
 ### 1.11.0 — 2026-10-05 — Watermark
 - Added an optional **Watermark** card under Rename files: load a PNG, SVG, or WebP (drag & drop or file selection) and apply it to every image with adjustable opacity, saturation, edge softness, size (percent of the image's shorter side, or pixels), a 3×3 position grid, and margin (percent or pixels)

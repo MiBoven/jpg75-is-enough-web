@@ -979,24 +979,53 @@ async function insertExifSegment(blob, exifBytes) {
 // Orientation tag (0x0112) back in unchanged, viewers that respect EXIF
 // orientation would rotate an already-correct image a second time. So we
 // reset it to 1 (normal) in the copied segment before splicing it back in.
-function patchOrientation(exifBytes) {
+//
+// The same applies to the thumbnail embedded in the EXIF block (IFD1): it
+// still holds the *original* sensor-oriented pixels, so with the orientation
+// reset to 1 file managers like Windows Explorer — which happily use that
+// embedded thumbnail — would show it sideways, and it wouldn't reflect
+// resizing or a watermark either. We unlink it (its bytes stay behind as
+// unreferenced data), so viewers generate the preview from the real image.
+// The stored pixel dimensions are refreshed to the output size as well.
+function patchExif(exifBytes, outWidth, outHeight) {
   try {
     const view = new DataView(exifBytes.buffer, exifBytes.byteOffset, exifBytes.byteLength);
+    const len = exifBytes.length;
     const tiffStart = 10; // marker(2) + length(2) + "Exif\0\0"(6)
-    if (tiffStart + 8 > exifBytes.length) return;
+    if (tiffStart + 8 > len) return;
     const little = view.getUint16(tiffStart) === 0x4949;
     const u16 = (o) => view.getUint16(o, little);
     const u32 = (o) => view.getUint32(o, little);
     if (u16(tiffStart + 2) !== 0x002A) return;
     const ifd0 = tiffStart + u32(tiffStart + 4);
-    if (ifd0 + 2 > exifBytes.length) return;
+    if (ifd0 + 2 > len) return;
     const entries = u16(ifd0);
+
+    let subIfd = 0;
     for (let i = 0; i < entries; i++) {
       const e = ifd0 + 2 + i * 12;
-      if (e + 12 > exifBytes.length) break;
-      if (u16(e) === 0x0112) { // Orientation, type SHORT, value inline in first 2 bytes
-        view.setUint16(e + 8, 1, little);
-        break;
+      if (e + 12 > len) break;
+      const tag = u16(e);
+      if (tag === 0x0112) view.setUint16(e + 8, 1, little);   // Orientation: SHORT, inline
+      else if (tag === 0x8769) subIfd = tiffStart + u32(e + 8); // pointer to the Exif sub-IFD
+    }
+
+    // The 4 bytes after IFD0's entries point to IFD1 (the thumbnail) — cut the link.
+    const nextPtr = ifd0 + 2 + entries * 12;
+    if (nextPtr + 4 <= len) view.setUint32(nextPtr, 0, little);
+
+    // PixelXDimension / PixelYDimension in the Exif sub-IFD
+    if (subIfd && subIfd + 2 <= len && outWidth && outHeight) {
+      const n = u16(subIfd);
+      for (let i = 0; i < n; i++) {
+        const e = subIfd + 2 + i * 12;
+        if (e + 12 > len) break;
+        const tag = u16(e);
+        if (tag !== 0xA002 && tag !== 0xA003) continue;
+        const val = tag === 0xA002 ? outWidth : outHeight;
+        const type = u16(e + 2);
+        if (type === 3) view.setUint16(e + 8, val, little);      // SHORT
+        else if (type === 4) view.setUint32(e + 8, val, little); // LONG
       }
     }
   } catch (err) {
@@ -1225,7 +1254,7 @@ async function buildOutput(file, rotation, useWatermark = true) {
   let blob = await canvasToBlob(canvas, quality);
   const exifSegment = await getExifSegment(file);
   if (exifSegment) {
-    patchOrientation(exifSegment);
+    patchExif(exifSegment, canvas.width, canvas.height);
     blob = await insertExifSegment(blob, exifSegment);
   }
 
