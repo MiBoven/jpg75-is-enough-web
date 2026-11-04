@@ -30,6 +30,7 @@
       <div class="menu-dropdown" id="menuDropdown" style="display:none;">
         <button class="menu-item" id="menuTheme">☾ Dark mode</button>
         <button class="menu-item" id="menuExport">Export</button>
+        <button class="menu-item" id="menuCompare">Compare (experimental)</button>
         <button class="menu-item" id="menuAbout">About</button>
       </div>
     </div>
@@ -322,7 +323,31 @@
 
 <div class="toast" id="toast"></div>
 
-<footer>JPG75 is Enough · v1.11.1</footer>
+<footer>JPG75 is Enough · v1.12.0</footer>
+
+<div class="modal-bg" id="modalCompare">
+  <div class="modal modal-wide">
+    <div class="modal-header-row">
+      <h2>Compare images <span class="badge-exp">experimental</span></h2>
+      <button class="icon" data-close title="Close">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="muted small">Compare two images: checksums, pixel differences and metadata. Everything is calculated locally – nothing is uploaded.</p>
+      <div class="cmp-slots">
+        <div class="cmp-slot" id="cmpSlotA">
+          <label class="cmp-drop"><input type="file" accept="image/*" id="cmpFileA"><strong>A</strong> – choose or drop an image</label>
+          <div class="cmp-info"></div>
+        </div>
+        <div class="cmp-slot" id="cmpSlotB">
+          <label class="cmp-drop"><input type="file" accept="image/*" id="cmpFileB"><strong>B</strong> – choose or drop an image</label>
+          <div class="cmp-info"></div>
+        </div>
+      </div>
+      <div id="cmpResult"></div>
+    </div>
+    <button class="close" data-close>Close</button>
+  </div>
+</div>
 
 <div class="modal-bg" id="modalAbout">
   <div class="modal">
@@ -332,7 +357,7 @@
     </div>
     <div class="modal-body">
       <p><strong>JPG75 is Enough</strong></p>
-      <p class="muted">Version <span id="aboutVersion">1.11.1</span></p>
+      <p class="muted">Version <span id="aboutVersion">1.12.0</span></p>
       <p>Converts images to JPG at reduced quality — entirely in your browser. No files are ever uploaded to a server; everything happens locally on this device.</p>
       <p class="muted small">EXIF metadata (capture date, camera model, orientation, etc.) is preserved through the conversion when the source file has it.</p>
     </div>

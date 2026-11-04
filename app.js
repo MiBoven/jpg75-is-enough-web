@@ -1362,6 +1362,7 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
     }
     row.remove();
     processed = processed.filter(p => p.id !== id);
+    refreshDuplicateHints();
     resolveDuplicateNames();
     updateBulkButtons();
   });
@@ -1470,6 +1471,7 @@ function addItem(file, blob, thumbUrl, baseName, index, dateObj, quality, origin
     watermark: true, wmRowEl: wmRow, wmCheckEl: wmCheck
   };
   processed.push(item);
+  checkDuplicateFor(item);
 
   function resetOriginalView() {
     item.showingOriginal = false;
@@ -2284,3 +2286,689 @@ wmRemoveBtn.addEventListener('click', clearWatermarkFile);
     );
   }
 })();
+
+
+// =====================================================================
+// Compare (experimental) – checksums, pixel diff, metadata diff
+// =====================================================================
+// ---- Pure helpers (no DOM) ----
+function cmpEsc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function bufToHex(buf) {
+  return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+}
+async function digestHex(algo, data) {
+  if (!globalThis.crypto || !crypto.subtle) return null;
+  return bufToHex(await crypto.subtle.digest(algo, data));
+}
+
+const CMP_ZIGZAG = [0,1,8,16,9,2,3,10,17,24,32,25,18,11,4,5,12,19,26,33,40,48,41,34,27,20,13,6,7,14,21,28,35,42,49,56,57,50,43,36,29,22,15,23,30,37,44,51,58,59,52,45,38,31,39,46,53,60,61,54,47,55,62,63];
+const CMP_STD_LUMA = [16,11,10,16,24,40,51,61,12,12,14,19,26,58,60,55,14,13,16,24,40,57,69,56,14,17,22,29,51,87,80,62,18,22,37,56,68,109,103,77,24,35,55,64,81,104,113,92,49,64,78,87,103,121,120,101,72,92,95,98,112,100,103,99];
+
+// Estimates the libjpeg quality (1-100) from the luminance quantization table.
+function estimateJpegQuality(zigzagTable) {
+  if (!zigzagTable || zigzagTable.length !== 64) return null;
+  let best = null;
+  for (let q = 1; q <= 100; q++) {
+    const s = q < 50 ? Math.floor(5000 / q) : 200 - 2 * q;
+    let diff = 0;
+    for (let i = 0; i < 64; i++) {
+      const std = CMP_STD_LUMA[CMP_ZIGZAG[i]];
+      const v = Math.min(255, Math.max(1, Math.floor((std * s + 50) / 100)));
+      diff += Math.abs(v - zigzagTable[i]);
+    }
+    if (!best || diff < best.diff) best = { q, diff };
+  }
+  return { quality: best.q, exact: best.diff === 0 };
+}
+
+function parseJpegStructure(u8) {
+  if (u8.length < 4 || u8[0] !== 0xFF || u8[1] !== 0xD8) return null;
+  const info = { segments: [], qtables: {}, width: 0, height: 0, progressive: false, components: [], exifTiff: null, hasGps: false };
+  let p = 2;
+  const add = (name, size) => info.segments.push({ name, size });
+  const ascii = (a, b) => { let s = ''; for (let i = a; i < b && i < u8.length; i++) s += String.fromCharCode(u8[i]); return s; };
+  while (p + 4 <= u8.length) {
+    if (u8[p] !== 0xFF) { p++; continue; }
+    const m = u8[p + 1];
+    if (m === 0xFF) { p++; continue; }
+    if (m === 0xD8 || m === 0x01 || (m >= 0xD0 && m <= 0xD7)) { p += 2; continue; }
+    if (m === 0xD9) break;
+    const len = (u8[p + 2] << 8) | u8[p + 3];
+    const start = p + 4, end = p + 2 + len;
+    let name;
+    if (m === 0xE0) name = ascii(start, start + 4) === 'JFIF' ? 'JFIF (APP0)' : 'APP0';
+    else if (m === 0xE1) {
+      if (ascii(start, start + 6) === 'Exif\0\0') { name = 'EXIF (APP1)'; info.exifTiff = { start: start + 6, end: Math.min(end, u8.length) }; }
+      else if (ascii(start, start + 28).startsWith('http://ns.adobe.com/xap/1.0/')) name = 'XMP (APP1)';
+      else name = 'APP1';
+    }
+    else if (m === 0xE2) name = ascii(start, start + 11) === 'ICC_PROFILE' ? 'ICC profile (APP2)' : 'APP2';
+    else if (m === 0xED) name = 'Photoshop/IPTC (APP13)';
+    else if (m === 0xEE) name = 'Adobe (APP14)';
+    else if (m >= 0xE3 && m <= 0xEF) name = 'APP' + (m - 0xE0);
+    else if (m === 0xFE) name = 'Comment (COM)';
+    else if (m === 0xDB) {
+      name = 'Quantization tables (DQT)';
+      let q = start;
+      while (q < end) {
+        const pq = u8[q] >> 4, tq = u8[q] & 15; q++;
+        const tab = [];
+        for (let i = 0; i < 64; i++) { if (pq) { tab.push((u8[q] << 8) | u8[q + 1]); q += 2; } else { tab.push(u8[q]); q++; } }
+        info.qtables[tq] = tab;
+      }
+    }
+    else if (m === 0xC4) name = 'Huffman tables (DHT)';
+    else if (m === 0xDD) name = 'Restart interval (DRI)';
+    else if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) {
+      name = 'Frame header (SOF' + (m - 0xC0) + ')';
+      info.progressive = (m === 0xC2);
+      info.height = (u8[start + 1] << 8) | u8[start + 2];
+      info.width = (u8[start + 3] << 8) | u8[start + 4];
+      const n = u8[start + 5];
+      info.components = [];
+      for (let i = 0; i < n; i++) {
+        const hv = u8[start + 7 + i * 3];
+        info.components.push({ h: hv >> 4, v: hv & 15 });
+      }
+    }
+    else if (m === 0xDA) {
+      // Scan header + entropy-coded data up to the next real marker
+      let q = end;
+      while (q + 1 < u8.length) {
+        if (u8[q] === 0xFF && u8[q + 1] !== 0 && !(u8[q + 1] >= 0xD0 && u8[q + 1] <= 0xD7) && u8[q + 1] !== 0xFF) break;
+        q++;
+      }
+      const last = info.segments[info.segments.length - 1];
+      if (last && last.name === 'Image data (SOS)') { last.size += q - p; last.count++; }
+      else info.segments.push({ name: 'Image data (SOS)', size: q - p, count: 1 });
+      p = q;
+      continue;
+    }
+    else name = '0xFF' + m.toString(16).toUpperCase().padStart(2, '0');
+    if (name) add(name, len + 2);
+    p = end;
+  }
+  return info;
+}
+
+function describeSubsampling(components) {
+  if (!components.length) return '—';
+  if (components.length === 1) return 'Grayscale';
+  const y = components[0], c = components[1];
+  const hr = y.h / c.h, vr = y.v / c.v;
+  if (hr === 1 && vr === 1) return '4:4:4';
+  if (hr === 2 && vr === 1) return '4:2:2';
+  if (hr === 2 && vr === 2) return '4:2:0';
+  if (hr === 1 && vr === 2) return '4:4:0';
+  if (hr === 4 && vr === 1) return '4:1:1';
+  return `${y.h}×${y.v} / ${c.h}×${c.v}`;
+}
+
+const CMP_EXIF_TYPE_SIZE = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
+const CMP_EXIF_NAMES = {
+  0x0100: 'ImageWidth', 0x0101: 'ImageLength', 0x0103: 'Compression', 0x010E: 'ImageDescription', 0x010F: 'Make', 0x0110: 'Model',
+  0x0112: 'Orientation', 0x011A: 'XResolution', 0x011B: 'YResolution', 0x0128: 'ResolutionUnit', 0x0131: 'Software',
+  0x0132: 'DateTime', 0x013B: 'Artist', 0x0201: 'ThumbnailOffset', 0x0202: 'ThumbnailLength', 0x0213: 'YCbCrPositioning',
+  0x8298: 'Copyright', 0x829A: 'ExposureTime', 0x829D: 'FNumber', 0x8822: 'ExposureProgram', 0x8827: 'ISO',
+  0x9000: 'ExifVersion', 0x9003: 'DateTimeOriginal', 0x9004: 'DateTimeDigitized', 0x9101: 'ComponentsConfiguration',
+  0x9201: 'ShutterSpeedValue', 0x9202: 'ApertureValue', 0x9204: 'ExposureBias', 0x9207: 'MeteringMode', 0x9209: 'Flash',
+  0x920A: 'FocalLength', 0x927C: 'MakerNote', 0x9286: 'UserComment', 0x9290: 'SubSecTime', 0x9291: 'SubSecTimeOriginal',
+  0x9292: 'SubSecTimeDigitized', 0xA000: 'FlashpixVersion', 0xA001: 'ColorSpace', 0xA002: 'PixelXDimension',
+  0xA003: 'PixelYDimension', 0xA217: 'SensingMethod', 0xA300: 'FileSource', 0xA301: 'SceneType', 0xA401: 'CustomRendered',
+  0xA402: 'ExposureMode', 0xA403: 'WhiteBalance', 0xA404: 'DigitalZoomRatio', 0xA405: 'FocalLengthIn35mm',
+  0xA406: 'SceneCaptureType', 0xA420: 'ImageUniqueID', 0xA431: 'BodySerialNumber', 0xA432: 'LensSpecification',
+  0xA433: 'LensMake', 0xA434: 'LensModel'
+};
+const CMP_GPS_NAMES = {
+  0: 'GPSVersionID', 1: 'GPSLatitudeRef', 2: 'GPSLatitude', 3: 'GPSLongitudeRef', 4: 'GPSLongitude', 5: 'GPSAltitudeRef',
+  6: 'GPSAltitude', 7: 'GPSTimeStamp', 0x10: 'GPSImgDirectionRef', 0x11: 'GPSImgDirection', 0x1D: 'GPSDateStamp'
+};
+
+// Reads every tag of IFD0 / Exif / GPS / Interop / IFD1. Returns Map(key -> {key, ifd, name, show, cmp}).
+function readExifTagMap(u8, t) {
+  const out = new Map();
+  if (!t || t.start + 8 > u8.length) return out;
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const base = t.start;
+  const bo = dv.getUint16(base);
+  const le = bo === 0x4949;
+  if (!le && bo !== 0x4D4D) return out;
+  if (dv.getUint16(base + 2, le) !== 42) return out;
+  const seen = new Set();
+
+  function readValue(type, count, vo) {
+    const sz = CMP_EXIF_TYPE_SIZE[type];
+    const items = [];
+    const n = Math.min(count, 4096);
+    for (let i = 0; i < n; i++) {
+      const o = vo + i * sz;
+      switch (type) {
+        case 1: case 7: items.push(dv.getUint8(o)); break;
+        case 6: items.push(dv.getInt8(o)); break;
+        case 3: items.push(dv.getUint16(o, le)); break;
+        case 8: items.push(dv.getInt16(o, le)); break;
+        case 4: items.push(dv.getUint32(o, le)); break;
+        case 9: items.push(dv.getInt32(o, le)); break;
+        case 5: items.push([dv.getUint32(o, le), dv.getUint32(o + 4, le)]); break;
+        case 10: items.push([dv.getInt32(o, le), dv.getInt32(o + 4, le)]); break;
+        case 11: items.push(dv.getFloat32(o, le)); break;
+        case 12: items.push(dv.getFloat64(o, le)); break;
+      }
+    }
+    return items;
+  }
+  const rat = (r) => r[1] === 0 ? `${r[0]}/0` : (r[1] === 1 ? String(r[0]) : `${r[0]}/${r[1]} (${Number((r[0] / r[1]).toPrecision(5))})`);
+
+  function readIfd(off, ifd) {
+    if (!off || seen.has(off) || base + off + 2 > u8.length) return;
+    seen.add(off);
+    const n = dv.getUint16(base + off, le);
+    for (let i = 0; i < n; i++) {
+      const e = base + off + 2 + i * 12;
+      if (e + 12 > u8.length) break;
+      const id = dv.getUint16(e, le), type = dv.getUint16(e + 2, le), count = dv.getUint32(e + 4, le);
+      const sz = CMP_EXIF_TYPE_SIZE[type];
+      if (!sz) continue;
+      if (ifd !== 'GPS' && (id === 0x8769 || id === 0x8825 || id === 0xA005)) {
+        const sub = dv.getUint32(e + 8, le);
+        readIfd(sub, id === 0x8769 ? 'Exif' : id === 0x8825 ? 'GPS' : 'Interop');
+        continue;
+      }
+      if (ifd === 'IFD0' && id === 0x8825) continue;
+      const total = sz * count;
+      const key = `${ifd}:${id.toString(16).padStart(4, '0')}`;
+      const name = (ifd === 'GPS' ? CMP_GPS_NAMES[id] : CMP_EXIF_NAMES[id]) || ('0x' + id.toString(16).toUpperCase().padStart(4, '0'));
+      const vo = total <= 4 ? e + 8 : base + dv.getUint32(e + 8, le);
+      let show, cmp;
+      if (vo + total > u8.length || vo < 0) { show = cmp = '[unreadable]'; }
+      else {
+        const items = readValue(type, count, vo);
+        if (type === 2) {
+          let s = '';
+          for (const c of items) { if (c === 0) break; s += String.fromCharCode(c); }
+          show = cmp = s.trim();
+        } else if (type === 1 || type === 7 || type === 6) {
+          const printable = items.length > 0 && items.every(c => c >= 32 && c < 127);
+          const hex = items.map(c => (c & 255).toString(16).padStart(2, '0')).join('');
+          cmp = hex;
+          if (printable) show = String.fromCharCode(...items);
+          else if (items.length <= 16) show = hex.replace(/(..)/g, '$1 ').trim();
+          else show = `[${count} bytes]`;
+        } else if (type === 5 || type === 10) {
+          cmp = items.map(r => `${r[0]}/${r[1]}`).join(', ');
+          show = items.slice(0, 6).map(rat).join(', ') + (items.length > 6 ? ' …' : '');
+        } else {
+          cmp = items.join(', ');
+          show = items.slice(0, 8).join(', ') + (items.length > 8 ? ` … (${count})` : '');
+        }
+      }
+      out.set(key, { key, ifd, name, show, cmp });
+    }
+    if (ifd === 'IFD0') {
+      const nextPos = base + off + 2 + n * 12;
+      if (nextPos + 4 <= u8.length) {
+        const next = dv.getUint32(nextPos, le);
+        if (next) readIfd(next, 'IFD1');
+      }
+    }
+  }
+  try { readIfd(dv.getUint32(base + 4, le), 'IFD0'); } catch (e) { /* damaged EXIF: return what we have */ }
+  return out;
+}
+
+// ---- Canvas-based helpers ----
+async function cmpDecode(file) {
+  try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch (e) { return await createImageBitmap(file); }
+}
+const tick = () => new Promise(r => setTimeout(r));
+
+async function cmpPixelHash(bmp) {
+  const w = bmp.width, h = bmp.height;
+  const strip = Math.max(16, Math.floor(2000000 / w));
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = Math.min(strip, h);
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  const parts = [];
+  for (let y = 0; y < h; y += strip) {
+    const sh = Math.min(strip, h - y);
+    if (cv.height !== sh) cv.height = sh;
+    ctx.clearRect(0, 0, w, sh);
+    ctx.drawImage(bmp, 0, y, w, sh, 0, 0, w, sh);
+    const d = ctx.getImageData(0, 0, w, sh);
+    const hx = await digestHex('SHA-256', d.data);
+    if (hx === null) return null;
+    parts.push(hx);
+    await tick();
+  }
+  return digestHex('SHA-256', new TextEncoder().encode(`${w}x${h}|` + parts.join('')));
+}
+
+// Perceptual difference hash (17x16 -> 256 bits)
+function cmpDHash(bmp) {
+  const mid = document.createElement('canvas');
+  mid.width = 136; mid.height = 128;
+  const mctx = mid.getContext('2d');
+  mctx.imageSmoothingQuality = 'high';
+  mctx.drawImage(bmp, 0, 0, 136, 128);
+  const sm = document.createElement('canvas');
+  sm.width = 17; sm.height = 16;
+  const sctx = sm.getContext('2d', { willReadFrequently: true });
+  sctx.imageSmoothingQuality = 'high';
+  sctx.drawImage(mid, 0, 0, 17, 16);
+  const d = sctx.getImageData(0, 0, 17, 16).data;
+  const gray = (x, y) => { const i = (y * 17 + x) * 4; return d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114; };
+  const bits = [];
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) bits.push(gray(x, y) > gray(x + 1, y) ? 1 : 0);
+  return bits;
+}
+
+const CMP_CELL_FRAC = 0.02;   // a grid cell counts as "changed" when >= 2 % of its pixels differ
+const CMP_MAX_CLUSTERS = 12;  // more regions than this = "widespread"
+const CMP_WIDESPREAD = 0.35;  // or more than 35 % of all cells changed
+
+async function cmpDiff(bmpA, bmpB, tol, isStale) {
+  const w = bmpA.width, h = bmpA.height, bw = bmpB.width, bh = bmpB.height;
+  const ar = (w / h) / (bw / bh);
+  if (ar < 0.95 || ar > 1.05) return { skipped: 'aspect' };
+  const scaled = (w !== bw || h !== bh);
+  const strip = Math.max(16, Math.floor(1500000 / w));
+  const cA = document.createElement('canvas'), cB = document.createElement('canvas');
+  cA.width = cB.width = w; cA.height = cB.height = Math.min(strip, h);
+  const xA = cA.getContext('2d', { willReadFrequently: true }), xB = cB.getContext('2d', { willReadFrequently: true });
+  if (scaled) xB.imageSmoothingQuality = 'high';
+
+  const cs = Math.max(8, Math.ceil(Math.max(w, h) / 64));
+  const gw = Math.ceil(w / cs), gh = Math.ceil(h / cs);
+  const counts = new Uint32Array(gw * gh);
+  const s = Math.min(1, 1600 / Math.max(w, h));
+  const ow = Math.max(1, Math.round(w * s)), oh = Math.max(1, Math.round(h * s));
+  const ov = new Uint8ClampedArray(ow * oh * 4);
+  let changed = 0, sumAbs = 0, sumSq = 0, maxDiff = 0;
+
+  for (let y0 = 0; y0 < h; y0 += strip) {
+    if (isStale()) return null;
+    const sh = Math.min(strip, h - y0);
+    if (cA.height !== sh) { cA.height = sh; cB.height = sh; if (scaled) xB.imageSmoothingQuality = 'high'; }
+    xA.drawImage(bmpA, 0, y0, w, sh, 0, 0, w, sh);
+    if (scaled) xB.drawImage(bmpB, 0, y0 * bh / h, bw, sh * bh / h, 0, 0, w, sh);
+    else xB.drawImage(bmpB, 0, y0, w, sh, 0, 0, w, sh);
+    const a = xA.getImageData(0, 0, w, sh).data, b = xB.getImageData(0, 0, w, sh).data;
+    for (let y = 0; y < sh; y++) {
+      const gy = Math.floor((y0 + y) / cs) * gw;
+      const oy = Math.min(oh - 1, Math.floor((y0 + y) * s));
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const dr = Math.abs(a[i] - b[i]), dg = Math.abs(a[i + 1] - b[i + 1]), db = Math.abs(a[i + 2] - b[i + 2]);
+        sumAbs += dr + dg + db; sumSq += dr * dr + dg * dg + db * db;
+        const m = dr > dg ? (dr > db ? dr : db) : (dg > db ? dg : db);
+        if (m > maxDiff) maxDiff = m;
+        if (m > tol) {
+          changed++;
+          counts[gy + Math.floor(x / cs)]++;
+          const oi = (oy * ow + Math.min(ow - 1, Math.floor(x * s))) * 4;
+          ov[oi] = 255; ov[oi + 1] = 30; ov[oi + 2] = 60; ov[oi + 3] = 210;
+        }
+      }
+    }
+    await tick();
+  }
+
+  // Cells -> connected clusters (8-neighbourhood)
+  const on = new Uint8Array(gw * gh);
+  let cellsChanged = 0;
+  for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+    const cw = Math.min(cs, w - gx * cs), ch = Math.min(cs, h - gy * cs);
+    if (counts[gy * gw + gx] >= Math.max(2, cw * ch * CMP_CELL_FRAC)) { on[gy * gw + gx] = 1; cellsChanged++; }
+  }
+  const clusters = [];
+  const vis = new Uint8Array(gw * gh);
+  for (let i = 0; i < on.length; i++) {
+    if (!on[i] || vis[i]) continue;
+    const stack = [i]; vis[i] = 1;
+    let minX = gw, minY = gh, maxX = 0, maxY = 0, cells = 0;
+    while (stack.length) {
+      const c = stack.pop(); const cx = c % gw, cy = (c / gw) | 0;
+      cells++;
+      if (cx < minX) minX = cx; if (cx > maxX) maxX = cx; if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+        const ni = ny * gw + nx;
+        if (on[ni] && !vis[ni]) { vis[ni] = 1; stack.push(ni); }
+      }
+    }
+    clusters.push({ x: minX * cs, y: minY * cs, w: Math.min(w, (maxX + 1) * cs) - minX * cs, h: Math.min(h, (maxY + 1) * cs) - minY * cs, cells });
+  }
+  clusters.sort((p, q) => q.cells - p.cells);
+  const widespread = clusters.length > CMP_MAX_CLUSTERS || cellsChanged / (gw * gh) > CMP_WIDESPREAD;
+
+  const ovc = document.createElement('canvas');
+  ovc.width = ow; ovc.height = oh;
+  const octx = ovc.getContext('2d');
+  octx.putImageData(new ImageData(ov, ow, oh), 0, 0);
+  if (!widespread) {
+    octx.lineWidth = Math.max(2, ow / 300);
+    clusters.forEach(c => {
+      octx.strokeStyle = '#000'; octx.strokeRect(c.x * s - 1, c.y * s - 1, c.w * s + 2, c.h * s + 2);
+      octx.strokeStyle = '#ffe600'; octx.strokeRect(c.x * s, c.y * s, c.w * s, c.h * s);
+    });
+  }
+  const total = w * h;
+  const mse = sumSq / (total * 3);
+  return {
+    skipped: null, w, h, scaled, changed, total, pct: changed / total * 100,
+    meanAbs: sumAbs / (total * 3), maxDiff, psnr: mse === 0 ? Infinity : 10 * Math.log10(255 * 255 / mse),
+    clusters, widespread, overlay: ovc
+  };
+}
+
+// ---- Duplicate hint in the image list (identical file content) ----
+async function cmpFileSha256(file) {
+  return digestHex('SHA-256', await file.arrayBuffer());
+}
+function refreshDuplicateHints() {
+  const groups = new Map();
+  processed.forEach(p => { if (p.fileHash) { if (!groups.has(p.fileHash)) groups.set(p.fileHash, []); groups.get(p.fileHash).push(p); } });
+  processed.forEach(p => {
+    const g = p.fileHash ? groups.get(p.fileHash) : null;
+    if (g && g.length > 1) {
+      if (!p.dupEl) { p.dupEl = document.createElement('div'); p.dupEl.className = 'dup-hint'; p.sizesEl.after(p.dupEl); }
+      const others = g.filter(o => o !== p).map(o => '#' + o.index).join(', ');
+      p.dupEl.textContent = `⚠ Identical file to ${others}`;
+      p.dupEl.title = 'Same SHA-256 checksum – the original files are byte-identical.';
+    } else if (p.dupEl) { p.dupEl.remove(); p.dupEl = null; }
+  });
+}
+async function checkDuplicateFor(item) {
+  try {
+    item.fileHash = await cmpFileSha256(item.file);
+    if (item.fileHash) refreshDuplicateHints();
+  } catch (e) { /* hint is optional */ }
+}
+
+// ---- Compare modal ----
+const menuCompare = document.getElementById('menuCompare');
+const modalCompare = document.getElementById('modalCompare');
+const cmpResult = document.getElementById('cmpResult');
+const cmpSlots = {
+  A: { el: document.getElementById('cmpSlotA'), input: document.getElementById('cmpFileA') },
+  B: { el: document.getElementById('cmpSlotB'), input: document.getElementById('cmpFileB') }
+};
+let cmpTolerance = 6;
+let cmpRunId = 0;
+let cmpDiffTimer = null;
+
+function cmpReset(key) {
+  const s = cmpSlots[key];
+  if (s.bmp) { try { s.bmp.close(); } catch (e) {} }
+  if (s.url) URL.revokeObjectURL(s.url);
+  Object.keys(s).forEach(k => { if (!['el', 'input'].includes(k)) delete s[k]; });
+}
+function cmpFreeAll() {
+  cmpRunId++;
+  ['A', 'B'].forEach(cmpReset);
+  cmpSlots.A.el.querySelector('.cmp-info').innerHTML = '';
+  cmpSlots.B.el.querySelector('.cmp-info').innerHTML = '';
+  cmpResult.innerHTML = '';
+  cmpSlots.A.input.value = ''; cmpSlots.B.input.value = '';
+}
+menuCompare.addEventListener('click', () => {
+  menuDropdown.style.display = 'none';
+  modalCompare.classList.add('open');
+});
+new MutationObserver(() => { if (!modalCompare.classList.contains('open')) cmpFreeAll(); })
+  .observe(modalCompare, { attributes: true, attributeFilter: ['class'] });
+
+['A', 'B'].forEach(key => {
+  const s = cmpSlots[key];
+  s.input.addEventListener('change', () => { if (s.input.files[0]) cmpLoad(key, s.input.files[0]); });
+  s.el.addEventListener('dragover', e => { e.preventDefault(); s.el.classList.add('drag'); });
+  s.el.addEventListener('dragleave', () => s.el.classList.remove('drag'));
+  s.el.addEventListener('drop', e => {
+    e.preventDefault(); s.el.classList.remove('drag');
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|avif|heic)$/i.test(f.name));
+    if (!files.length) return;
+    cmpLoad(key, files[0]);
+    if (files[1]) cmpLoad(key === 'A' ? 'B' : 'A', files[1]);
+  });
+});
+
+function cmpFmtDate(ms) { try { return new Date(ms).toLocaleString(); } catch (e) { return '—'; } }
+
+async function cmpLoad(key, file) {
+  const s = cmpSlots[key];
+  cmpReset(key);
+  cmpResult.innerHTML = '';
+  cmpRunId++;
+  const info = s.el.querySelector('.cmp-info');
+  info.innerHTML = `<p class="muted small">Analysing ${cmpEsc(file.name)} …</p>`;
+  s.file = file;
+  try {
+    const buf = await file.arrayBuffer();
+    s.u8 = new Uint8Array(buf);
+    s.jpeg = parseJpegStructure(s.u8);
+    s.exif = s.jpeg && s.jpeg.exifTiff ? readExifTagMap(s.u8, s.jpeg.exifTiff) : new Map();
+    s.hashes = {
+      'SHA-256': await digestHex('SHA-256', buf),
+      'SHA-1': await digestHex('SHA-1', buf),
+      'SHA-512': await digestHex('SHA-512', buf)
+    };
+    s.bmp = await cmpDecode(file);
+    s.url = URL.createObjectURL(file);
+    s.pixelHash = await cmpPixelHash(s.bmp);
+    s.dhash = cmpDHash(s.bmp);
+    s.quality = s.jpeg ? estimateJpegQuality(s.jpeg.qtables[0]) : null;
+  } catch (e) {
+    info.innerHTML = `<p class="cmp-bad">Could not read this file as an image.</p>`;
+    s.failed = true;
+    return;
+  }
+  s.u8 = null; // bytes are no longer needed after analysis (keeps memory low)
+  renderSlot(key);
+  cmpUpdateResult();
+}
+
+function cmpHashRow(label, value) {
+  if (!value) return `<div class="cmp-row"><span>${label}</span><span class="muted">needs HTTPS</span></div>`;
+  return `<div class="cmp-hash"><span class="cmp-hash-label">${label}</span><code>${value}</code></div>`;
+}
+
+function renderSlot(key) {
+  const s = cmpSlots[key];
+  const info = s.el.querySelector('.cmp-info');
+  const j = s.jpeg;
+  const rows = [
+    ['File', cmpEsc(s.file.name)],
+    ['Size', `${formatSize(s.file.size)} (${s.file.size.toLocaleString()} B)`],
+    ['Dimensions', `${s.bmp.width} × ${s.bmp.height} px`],
+    ['Modified', cmpFmtDate(s.file.lastModified)],
+    ['Type', cmpEsc(s.file.type || '—')]
+  ];
+  if (j) {
+    rows.push(['JPEG mode', (j.progressive ? 'Progressive' : 'Baseline') + ' · ' + describeSubsampling(j.components)]);
+    rows.push(['Est. quality', s.quality ? `${s.quality.exact ? '' : '≈ '}${s.quality.quality}${s.quality.exact ? '' : ' (custom tables)'}` : '—']);
+    const gps = Array.from(s.exif.keys()).some(k => k.startsWith('GPS:'));
+    rows.push(['Location (GPS)', gps ? '<span class="cmp-bad">contained</span>' : 'none']);
+  }
+  info.innerHTML = `
+    <div class="cmp-table">${rows.map(r => `<div class="cmp-row"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('')}</div>
+    ${cmpHashRow('SHA-256', s.hashes['SHA-256'])}
+    <details class="cmp-more"><summary>More checksums</summary>
+      ${cmpHashRow('SHA-1', s.hashes['SHA-1'])}
+      ${cmpHashRow('SHA-512', s.hashes['SHA-512'])}
+    </details>
+    ${cmpHashRow('Pixel hash', s.pixelHash)}
+    <div class="cmp-expected">
+      <input type="text" placeholder="Expected hash (SHA-1 / 256 / 512)" spellcheck="false" autocomplete="off">
+      <div class="cmp-expected-result muted small"></div>
+    </div>`;
+  info.querySelectorAll('code').forEach(c => {
+    c.title = 'Tap to copy';
+    c.addEventListener('click', () => { navigator.clipboard?.writeText(c.textContent).then(() => showToast('Hash copied')).catch(() => {}); });
+  });
+  const inp = info.querySelector('.cmp-expected input');
+  const out = info.querySelector('.cmp-expected-result');
+  inp.addEventListener('input', () => {
+    const v = inp.value.replace(/[\s:]/g, '').toLowerCase();
+    if (!v) { out.textContent = ''; out.className = 'cmp-expected-result muted small'; return; }
+    const algo = { 40: 'SHA-1', 64: 'SHA-256', 128: 'SHA-512' }[v.length];
+    if (!algo) { out.textContent = 'Length does not match SHA-1 (40), SHA-256 (64) or SHA-512 (128).'; out.className = 'cmp-expected-result cmp-bad small'; return; }
+    const ok = s.hashes[algo] === v;
+    out.textContent = ok ? `✓ Matches ${algo}` : `✗ Does not match ${algo}`;
+    out.className = 'cmp-expected-result small ' + (ok ? 'cmp-good' : 'cmp-bad');
+  });
+}
+
+function cmpSegmentAgg(j) {
+  const m = new Map();
+  if (!j) return m;
+  j.segments.forEach(sg => {
+    const e = m.get(sg.name) || { size: 0, n: 0 };
+    e.size += sg.size; e.n++;
+    m.set(sg.name, e);
+  });
+  return m;
+}
+
+function cmpUpdateResult() {
+  const A = cmpSlots.A, B = cmpSlots.B;
+  if (!A.bmp || !B.bmp) { cmpResult.innerHTML = ''; return; }
+  const sameFile = A.hashes['SHA-256'] && A.hashes['SHA-256'] === B.hashes['SHA-256'];
+  const samePixels = A.pixelHash && A.pixelHash === B.pixelHash;
+  let hamming = 0;
+  for (let i = 0; i < A.dhash.length; i++) if (A.dhash[i] !== B.dhash[i]) hamming++;
+  const similarity = (1 - hamming / A.dhash.length) * 100;
+
+  // metadata
+  const segA = cmpSegmentAgg(A.jpeg), segB = cmpSegmentAgg(B.jpeg);
+  const segNames = Array.from(new Set([...segA.keys(), ...segB.keys()]));
+  const segRows = segNames.map(n => {
+    const a = segA.get(n), b = segB.get(n);
+    const diff = !a || !b || a.size !== b.size;
+    const f = (x) => x ? formatSize(x.size) + (x.n > 1 ? ` (×${x.n})` : '') : '—';
+    return `<tr class="${diff ? 'cmp-diff' : ''}"><td>${cmpEsc(n)}</td><td>${f(a)}</td><td>${f(b)}</td></tr>`;
+  }).join('');
+  const keys = Array.from(new Set([...A.exif.keys(), ...B.exif.keys()]));
+  const exifDiff = keys.map(k => ({ a: A.exif.get(k), b: B.exif.get(k) }))
+    .filter(r => !r.a || !r.b || r.a.cmp !== r.b.cmp);
+  const exifRows = exifDiff.map(r => {
+    const ref = r.a || r.b;
+    const cut = (t) => { const x = t == null ? '—' : String(t); return cmpEsc(x.length > 60 ? x.slice(0, 60) + '…' : x); };
+    return `<tr><td>${cmpEsc(ref.ifd)}</td><td>${cmpEsc(ref.name)}</td><td>${r.a ? cut(r.a.show) : '—'}</td><td>${r.b ? cut(r.b.show) : '—'}</td></tr>`;
+  }).join('');
+
+  let verdict, vClass = 'cmp-bad';
+  if (sameFile) { verdict = 'Byte-identical files (same SHA-256).'; vClass = 'cmp-good'; }
+  else if (samePixels) { verdict = 'Identical pixels – only metadata or file structure differ.'; vClass = 'cmp-good'; }
+  else verdict = 'The images differ.';
+
+  cmpResult.innerHTML = `
+    <h3 class="cmp-h">Result</h3>
+    <div class="cmp-verdict ${vClass}">${verdict}</div>
+    <div class="cmp-table">
+      <div class="cmp-row"><span>File checksum</span><span class="${sameFile ? 'cmp-good' : 'cmp-bad'}">${sameFile ? 'equal' : 'different'}</span></div>
+      <div class="cmp-row"><span>Pixel hash</span><span class="${samePixels ? 'cmp-good' : 'cmp-bad'}">${samePixels ? 'equal' : 'different'}</span></div>
+      <div class="cmp-row"><span>Similarity (perceptual)</span><span>${similarity.toFixed(1)} %</span></div>
+      <div class="cmp-row"><span>File size</span><span>${formatSize(A.file.size)} vs ${formatSize(B.file.size)}</span></div>
+      <div class="cmp-row"><span>Dimensions</span><span>${A.bmp.width}×${A.bmp.height} vs ${B.bmp.width}×${B.bmp.height}</span></div>
+      <div class="cmp-row"><span>Modified</span><span>${cmpFmtDate(A.file.lastModified)}<br>${cmpFmtDate(B.file.lastModified)}</span></div>
+    </div>
+    <p class="muted small">The pixel hash depends on this browser's image decoder – compare only hashes made in the same browser.</p>
+
+    <h3 class="cmp-h">Pixel differences</h3>
+    <div class="cmp-tol">
+      <label for="cmpTol">Tolerance</label>
+      <input type="range" id="cmpTol" min="0" max="40" value="${cmpTolerance}">
+      <span id="cmpTolVal">${cmpTolerance}</span>
+    </div>
+    <p class="muted small">Ignores small colour deviations (e.g. JPEG recompression noise). 0 = every difference counts.</p>
+    <div id="cmpDiffInfo" class="muted small">Calculating …</div>
+    <div class="cmp-viewer" id="cmpViewer" style="aspect-ratio:${A.bmp.width} / ${A.bmp.height}">
+      <img src="${A.url}" alt="A" draggable="false">
+      <img src="${B.url}" alt="B" class="cmp-top" id="cmpTopImg" draggable="false">
+      <canvas id="cmpOverlay" class="cmp-overlay" style="display:none"></canvas>
+      <div class="cmp-handle" id="cmpHandle"></div>
+      <span class="cmp-tag cmp-tag-a">A</span><span class="cmp-tag cmp-tag-b">B</span>
+    </div>
+    <div class="cmp-tol">
+      <label for="cmpSwipe">A ⇄ B</label>
+      <input type="range" id="cmpSwipe" min="0" max="100" value="50">
+    </div>
+    <label class="cmp-check"><input type="checkbox" id="cmpShowDiff" checked> Show differences (red)</label>
+
+    <h3 class="cmp-h">Metadata</h3>
+    ${(A.jpeg || B.jpeg) ? `
+    <table class="cmp-tbl"><thead><tr><th>Segment</th><th>A</th><th>B</th></tr></thead><tbody>${segRows}</tbody></table>
+    <h4 class="cmp-h4">EXIF differences</h4>
+    ${exifRows ? `<table class="cmp-tbl"><thead><tr><th>IFD</th><th>Tag</th><th>A</th><th>B</th></tr></thead><tbody>${exifRows}</tbody></table>` : '<p class="muted small">No EXIF differences.</p>'}
+    ` : '<p class="muted small">Segment and EXIF comparison is available for JPEG files only.</p>'}
+  `;
+
+  const swipe = document.getElementById('cmpSwipe');
+  const topImg = document.getElementById('cmpTopImg');
+  const handle = document.getElementById('cmpHandle');
+  const setSwipe = () => {
+    const v = +swipe.value;
+    topImg.style.clipPath = `inset(0 0 0 ${v}%)`;
+    handle.style.left = v + '%';
+  };
+  swipe.addEventListener('input', setSwipe);
+  setSwipe();
+  const viewer = document.getElementById('cmpViewer');
+  const dragTo = (e) => {
+    const r = viewer.getBoundingClientRect();
+    swipe.value = Math.max(0, Math.min(100, ((e.clientX - r.left) / r.width) * 100));
+    setSwipe();
+  };
+  viewer.addEventListener('pointerdown', (e) => { viewer.setPointerCapture(e.pointerId); dragTo(e); viewer.onpointermove = dragTo; });
+  viewer.addEventListener('pointerup', () => { viewer.onpointermove = null; });
+  const showDiff = document.getElementById('cmpShowDiff');
+  const ovCanvas = document.getElementById('cmpOverlay');
+  showDiff.addEventListener('change', () => { ovCanvas.style.display = (showDiff.checked && ovCanvas.width > 1) ? 'block' : 'none'; });
+  const tol = document.getElementById('cmpTol');
+  tol.addEventListener('input', () => {
+    cmpTolerance = +tol.value;
+    document.getElementById('cmpTolVal').textContent = cmpTolerance;
+    clearTimeout(cmpDiffTimer);
+    cmpDiffTimer = setTimeout(cmpRunDiff, 250);
+  });
+  cmpRunDiff();
+}
+
+async function cmpRunDiff() {
+  const A = cmpSlots.A, B = cmpSlots.B;
+  const infoEl = document.getElementById('cmpDiffInfo');
+  if (!A.bmp || !B.bmp || !infoEl) return;
+  const my = ++cmpRunId;
+  infoEl.className = 'muted small';
+  infoEl.textContent = 'Calculating …';
+  let r;
+  try { r = await cmpDiff(A.bmp, B.bmp, cmpTolerance, () => my !== cmpRunId); }
+  catch (e) { infoEl.textContent = 'Pixel comparison failed (image too large for this device?).'; return; }
+  if (r === null || my !== cmpRunId) return;
+  const ovCanvas = document.getElementById('cmpOverlay');
+  if (r.skipped === 'aspect') {
+    infoEl.className = 'cmp-bad small';
+    infoEl.textContent = 'The aspect ratios are too different – a pixel comparison would not be meaningful.';
+    return;
+  }
+  ovCanvas.width = r.overlay.width; ovCanvas.height = r.overlay.height;
+  ovCanvas.getContext('2d').drawImage(r.overlay, 0, 0);
+  ovCanvas.style.display = document.getElementById('cmpShowDiff').checked && r.changed > 0 ? 'block' : 'none';
+  const parts = [];
+  parts.push(r.changed === 0
+    ? '<strong class="cmp-good">No differences above the tolerance.</strong>'
+    : `<strong>${r.pct < 0.01 ? '< 0.01' : r.pct.toFixed(2)} %</strong> of the pixels differ (${r.changed.toLocaleString()} of ${r.total.toLocaleString()}).`);
+  if (r.changed > 0) {
+    if (r.widespread) parts.push('The differences are spread widely across the image, so no individual regions are marked.');
+    else if (r.clusters.length) parts.push(`${r.clusters.length} region${r.clusters.length > 1 ? 's' : ''} marked with yellow boxes.`);
+    else parts.push('Only scattered single pixels differ (no region marked).');
+  }
+  parts.push(`Mean deviation ${r.meanAbs.toFixed(2)} / 255 · max ${r.maxDiff} · PSNR ${r.psnr === Infinity ? '∞' : r.psnr.toFixed(1) + ' dB'}`);
+  if (r.scaled) parts.push('<span class="cmp-bad">Different dimensions – B was scaled to A, so the result is less precise.</span>');
+  infoEl.className = 'small';
+  infoEl.innerHTML = parts.join('<br>');
+}

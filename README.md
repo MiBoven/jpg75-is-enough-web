@@ -67,6 +67,12 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
   - Each image can opt out via **Watermark on this image** in its expanded panel. The PNG/WebP export includes the watermark automatically; **Show original** shows the image without it
   - SVGs are loaded as images, so scripts and external resources inside them are never executed. They need a `width`/`height` or a `viewBox`, and text inside should be converted to paths (fonts aren't loaded)
 - **Reset all**: restores Quality, Resize, Rename, Watermark, and Export settings (and every image's rotation, per-image name override, and watermark switch) back to their defaults — the uploaded/converted images and the loaded watermark file stay, unlike **Remove all**
+- **Compare images** *(experimental, only via the ⋮ menu → "Compare (experimental)")*: pick or drop two images (A and B) and compare them locally:
+  - **Checksums**: SHA-256 (plus SHA-1 / SHA-512) of each file and a **pixel hash** over the decoded pixels – equal pixel hashes with different file hashes mean only metadata or file structure differ. An optional **expected hash** field shows a green/red match (algorithm detected by length)
+  - **Pixel differences** with adjustable tolerance (ignores JPEG recompression noise): red overlay, yellow boxes around a few changed regions, percentage of changed pixels, mean deviation and PSNR; widespread changes are reported instead of drawing many boxes. Different dimensions are compared by scaling B to A (marked as less precise); very different aspect ratios are not compared
+  - **Metadata**: JPEG segment inventory (EXIF, ICC, XMP, comments … with sizes) and a table of only the differing EXIF tags
+  - **Extras**: perceptual similarity in %, A/B swipe slider, estimated JPEG quality, chroma subsampling, baseline/progressive, GPS presence
+  - Images in the list that are byte-identical copies get a small "Identical file" hint
 
 ## How it works
 
@@ -100,6 +106,10 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.12.0 — 2026-11-04 — Compare images (experimental)
+- Added an experimental **Compare** dialog (⋮ menu): file checksums (SHA-256/SHA-1/SHA-512), pixel hash, expected-hash check, pixel-difference overlay with tolerance and region boxes, JPEG segment and EXIF tag differences, perceptual similarity, A/B swipe slider, estimated JPEG quality
+- The image list now shows a hint when two original files are byte-identical
 
 ### 1.11.1 — 2026-10-05 — Fix sideways thumbnails in file managers
 - Fixed converted photos showing a sideways preview thumbnail in file managers such as Windows Explorer while opening correctly: the copied EXIF block still contained the original's embedded thumbnail (in sensor orientation) but its orientation tag had been reset. That embedded thumbnail is now unlinked, so previews are generated from the converted image itself
