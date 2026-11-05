@@ -323,7 +323,7 @@
 
 <div class="toast" id="toast"></div>
 
-<footer>JPG75 is Enough · v1.12.0</footer>
+<footer>JPG75 is Enough · v1.13.0</footer>
 
 <div class="modal-bg" id="modalCompare">
   <div class="modal modal-wide">
@@ -333,13 +333,14 @@
     </div>
     <div class="modal-body">
       <p class="muted small">Compare two images: checksums, pixel differences and metadata. Everything is calculated locally – nothing is uploaded.</p>
+      <label class="cmp-both" id="cmpBoth"><input type="file" accept="image/*" multiple id="cmpFileBoth">Choose 2 images at once</label>
       <div class="cmp-slots">
         <div class="cmp-slot" id="cmpSlotA">
-          <label class="cmp-drop"><input type="file" accept="image/*" id="cmpFileA"><strong>A</strong> – choose or drop an image</label>
+          <label class="cmp-drop"><input type="file" accept="image/*" id="cmpFileA"><strong>A</strong> – <span class="cmp-drop-text">choose or drop an image</span></label>
           <div class="cmp-info"></div>
         </div>
         <div class="cmp-slot" id="cmpSlotB">
-          <label class="cmp-drop"><input type="file" accept="image/*" id="cmpFileB"><strong>B</strong> – choose or drop an image</label>
+          <label class="cmp-drop"><input type="file" accept="image/*" id="cmpFileB"><strong>B</strong> – <span class="cmp-drop-text">choose or drop an image</span></label>
           <div class="cmp-info"></div>
         </div>
       </div>
@@ -357,7 +358,7 @@
     </div>
     <div class="modal-body">
       <p><strong>JPG75 is Enough</strong></p>
-      <p class="muted">Version <span id="aboutVersion">1.12.0</span></p>
+      <p class="muted">Version <span id="aboutVersion">1.13.0</span></p>
       <p>Converts images to JPG at reduced quality — entirely in your browser. No files are ever uploaded to a server; everything happens locally on this device.</p>
       <p class="muted small">EXIF metadata (capture date, camera model, orientation, etc.) is preserved through the conversion when the source file has it.</p>
     </div>

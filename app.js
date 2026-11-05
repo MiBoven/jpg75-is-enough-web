@@ -2565,20 +2565,97 @@ function cmpDHash(bmp) {
   return bits;
 }
 
+// ---- Auto-alignment (shift + uniform scale of B onto A) ----
+// Transform model (normalised coordinates): a point at B position bu maps to A position
+// u = s * (bu - 0.5) + 0.5 + tx   (same for v with ty).
+function cmpGray(bmp, tw, th) {
+  let cur = bmp, cw = bmp.width, ch = bmp.height;
+  while (cw > tw * 2 && ch > th * 2) {
+    const nw = Math.max(tw, Math.ceil(cw / 2)), nh = Math.max(th, Math.ceil(ch / 2));
+    const c = document.createElement('canvas'); c.width = nw; c.height = nh;
+    const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(cur, 0, 0, nw, nh);
+    cur = c; cw = nw; ch = nh;
+  }
+  const c = document.createElement('canvas'); c.width = tw; c.height = th;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.fillStyle = '#fff'; x.fillRect(0, 0, tw, th);
+  x.imageSmoothingQuality = 'high'; x.drawImage(cur, 0, 0, tw, th);
+  const d = x.getImageData(0, 0, tw, th).data;
+  const g = new Float32Array(tw * th);
+  for (let i = 0; i < g.length; i++) g[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
+  return g;
+}
+
+function cmpScore(gA, gB, tw, th, s, tx, ty) {
+  let sum = 0, n = 0;
+  const inv = 1 / s;
+  for (let y = 0; y < th; y++) {
+    const by = ((y + 0.5) / th - 0.5 - ty) * inv * th + 0.5 * th - 0.5;
+    if (by < 0 || by > th - 1) continue;
+    const y0 = by | 0, fy = by - y0, y1 = Math.min(th - 1, y0 + 1);
+    for (let x = 0; x < tw; x++) {
+      const bx = ((x + 0.5) / tw - 0.5 - tx) * inv * tw + 0.5 * tw - 0.5;
+      if (bx < 0 || bx > tw - 1) continue;
+      const x0 = bx | 0, fx = bx - x0, x1 = Math.min(tw - 1, x0 + 1);
+      const top = gB[y0 * tw + x0] * (1 - fx) + gB[y0 * tw + x1] * fx;
+      const bot = gB[y1 * tw + x0] * (1 - fx) + gB[y1 * tw + x1] * fx;
+      sum += Math.abs(gA[y * tw + x] - (top * (1 - fy) + bot * fy));
+      n++;
+    }
+  }
+  return n < tw * th * 0.6 ? Infinity : sum / n;
+}
+
+async function cmpAlignImages(bmpA, bmpB) {
+  const w = bmpA.width, h = bmpA.height;
+  const dims = (M) => {
+    M = Math.min(M, Math.max(w, h));
+    return w >= h ? [M, Math.max(8, Math.round(M * h / w))] : [Math.max(8, Math.round(M * w / h)), M];
+  };
+  const range = (c, half, step) => { const a = []; for (let v = c - half; v <= c + half + 1e-9; v += step) a.push(v); return a; };
+  let best = { s: 1, tx: 0, ty: 0 };
+  let prev = null;
+  const levels = [64, 160, 320];
+  let idScore = Infinity;
+  for (let li = 0; li < levels.length; li++) {
+    const [tw, th] = dims(levels[li]);
+    const gA = cmpGray(bmpA, tw, th), gB = cmpGray(bmpB, tw, th);
+    let ss, txs, tys;
+    if (li === 0) { ss = range(1, 0.15, 0.01); txs = range(0, 0.15, 1 / tw); tys = range(0, 0.15, 1 / th); }
+    else if (li === 1) { ss = range(best.s, 0.01, 0.0025); txs = range(best.tx, 2 / prev[0], 1 / tw); tys = range(best.ty, 2 / prev[1], 1 / th); }
+    else { ss = range(best.s, 0.0025, 0.001); txs = range(best.tx, 2 / prev[0], 1 / tw); tys = range(best.ty, 2 / prev[1], 1 / th); }
+    let bs = Infinity, cand = best;
+    for (const s of ss) for (const tx of txs) for (const ty of tys) {
+      const sc = cmpScore(gA, gB, tw, th, s, tx, ty);
+      if (sc < bs) { bs = sc; cand = { s, tx, ty }; }
+    }
+    best = cand; prev = [tw, th];
+    if (li === levels.length - 1) { best.score = bs; idScore = cmpScore(gA, gB, tw, th, 1, 0, 0); }
+    await tick();
+  }
+  // Snap to "no transform" when the gain is negligible (avoids needless resampling blur)
+  const tinyShift = Math.abs(best.tx * w) < 0.75 && Math.abs(best.ty * h) < 0.75 && Math.abs(best.s - 1) < 0.003;
+  if (tinyShift || !(best.score < idScore * 0.95)) return { s: 1, tx: 0, ty: 0, aligned: false };
+  return { s: best.s, tx: best.tx, ty: best.ty, aligned: true, dx: best.tx * w, dy: best.ty * h };
+}
+
 const CMP_CELL_FRAC = 0.02;   // a grid cell counts as "changed" when >= 2 % of its pixels differ
 const CMP_MAX_CLUSTERS = 12;  // more regions than this = "widespread"
 const CMP_WIDESPREAD = 0.35;  // or more than 35 % of all cells changed
 
-async function cmpDiff(bmpA, bmpB, tol, isStale) {
+async function cmpDiff(bmpA, bmpB, tol, posTol, align, isStale) {
   const w = bmpA.width, h = bmpA.height, bw = bmpB.width, bh = bmpB.height;
   const ar = (w / h) / (bw / bh);
   if (ar < 0.95 || ar > 1.05) return { skipped: 'aspect' };
   const scaled = (w !== bw || h !== bh);
+  const al = align || { s: 1, tx: 0, ty: 0 };
+  const r = posTol;
+  const axs = al.s * w / bw, ays = al.s * h / bh;
+  const ox = w * (0.5 - 0.5 * al.s + al.tx), oy = h * (0.5 - 0.5 * al.s + al.ty);
   const strip = Math.max(16, Math.floor(1500000 / w));
   const cA = document.createElement('canvas'), cB = document.createElement('canvas');
-  cA.width = cB.width = w; cA.height = cB.height = Math.min(strip, h);
+  cA.width = cB.width = w; cA.height = cB.height = Math.min(strip + 2 * r, h);
   const xA = cA.getContext('2d', { willReadFrequently: true }), xB = cB.getContext('2d', { willReadFrequently: true });
-  if (scaled) xB.imageSmoothingQuality = 'high';
 
   const cs = Math.max(8, Math.ceil(Math.max(w, h) / 64));
   const gw = Math.ceil(w / cs), gh = Math.ceil(h / cs);
@@ -2586,29 +2663,60 @@ async function cmpDiff(bmpA, bmpB, tol, isStale) {
   const s = Math.min(1, 1600 / Math.max(w, h));
   const ow = Math.max(1, Math.round(w * s)), oh = Math.max(1, Math.round(h * s));
   const ov = new Uint8ClampedArray(ow * oh * 4);
-  let changed = 0, sumAbs = 0, sumSq = 0, maxDiff = 0;
+  let changed = 0, compared = 0, sumAbs = 0, sumSq = 0, maxDiff = 0;
 
   for (let y0 = 0; y0 < h; y0 += strip) {
     if (isStale()) return null;
     const sh = Math.min(strip, h - y0);
-    if (cA.height !== sh) { cA.height = sh; cB.height = sh; if (scaled) xB.imageSmoothingQuality = 'high'; }
-    xA.drawImage(bmpA, 0, y0, w, sh, 0, 0, w, sh);
-    if (scaled) xB.drawImage(bmpB, 0, y0 * bh / h, bw, sh * bh / h, 0, 0, w, sh);
-    else xB.drawImage(bmpB, 0, y0, w, sh, 0, 0, w, sh);
-    const a = xA.getImageData(0, 0, w, sh).data, b = xB.getImageData(0, 0, w, sh).data;
-    for (let y = 0; y < sh; y++) {
-      const gy = Math.floor((y0 + y) / cs) * gw;
-      const oy = Math.min(oh - 1, Math.floor((y0 + y) * s));
+    const ys = Math.max(0, y0 - r), ye = Math.min(h, y0 + sh + r), rows = ye - ys;
+    if (cA.height !== rows) { cA.height = rows; cB.height = rows; }
+    xA.clearRect(0, 0, w, rows);
+    xA.drawImage(bmpA, 0, ys, w, rows, 0, 0, w, rows);
+    xB.setTransform(1, 0, 0, 1, 0, 0);
+    xB.clearRect(0, 0, w, rows);
+    xB.imageSmoothingQuality = 'high';
+    xB.setTransform(axs, 0, 0, ays, ox, oy - ys);
+    xB.drawImage(bmpB, 0, 0);
+    xB.setTransform(1, 0, 0, 1, 0, 0);
+    const a = xA.getImageData(0, 0, w, rows).data, b = xB.getImageData(0, 0, w, rows).data;
+    const md = (p, i, q, j) => {
+      const d1 = Math.abs(p[i] - q[j]), d2 = Math.abs(p[i + 1] - q[j + 1]), d3 = Math.abs(p[i + 2] - q[j + 2]);
+      return d1 > d2 ? (d1 > d3 ? d1 : d3) : (d2 > d3 ? d2 : d3);
+    };
+    // Does pixel i of P have a match (within tol) among the pixels around position (x, ly) of Q?
+    const hasMatch = (p, q, i, x, ly, checkAlpha) => {
+      for (let dy = -r; dy <= r; dy++) {
+        const yy = ly + dy; if (yy < 0 || yy >= rows) continue;
+        for (let dx = -r; dx <= r; dx++) {
+          const xx = x + dx; if (xx < 0 || xx >= w) continue;
+          const j = (yy * w + xx) * 4;
+          if (checkAlpha && b[j + 3] < 250) continue;
+          if (md(p, i, q, j) <= tol) return true;
+        }
+      }
+      return false;
+    };
+    for (let y = y0; y < y0 + sh; y++) {
+      const ly = y - ys;
+      const gy = Math.floor(y / cs) * gw;
+      const oy2 = Math.min(oh - 1, Math.floor(y * s));
       for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4;
+        const i = (ly * w + x) * 4;
+        if (b[i + 3] < 250) continue;           // B does not cover this pixel after alignment
+        compared++;
         const dr = Math.abs(a[i] - b[i]), dg = Math.abs(a[i + 1] - b[i + 1]), db = Math.abs(a[i + 2] - b[i + 2]);
         sumAbs += dr + dg + db; sumSq += dr * dr + dg * dg + db * db;
         const m = dr > dg ? (dr > db ? dr : db) : (dg > db ? dg : db);
         if (m > maxDiff) maxDiff = m;
-        if (m > tol) {
+        let ch = m > tol;
+        if (ch && r > 0) {
+          // A pixel must find a match in B's neighbourhood AND B pixel in A's neighbourhood
+          ch = !hasMatch(a, b, i, x, ly, true) || !hasMatch(b, a, i, x, ly, false);
+        }
+        if (ch) {
           changed++;
           counts[gy + Math.floor(x / cs)]++;
-          const oi = (oy * ow + Math.min(ow - 1, Math.floor(x * s))) * 4;
+          const oi = (oy2 * ow + Math.min(ow - 1, Math.floor(x * s))) * 4;
           ov[oi] = 255; ov[oi + 1] = 30; ov[oi + 2] = 60; ov[oi + 3] = 210;
         }
       }
@@ -2656,10 +2764,11 @@ async function cmpDiff(bmpA, bmpB, tol, isStale) {
       octx.strokeStyle = '#ffe600'; octx.strokeRect(c.x * s, c.y * s, c.w * s, c.h * s);
     });
   }
-  const total = w * h;
+  const total = Math.max(1, compared);
   const mse = sumSq / (total * 3);
   return {
     skipped: null, w, h, scaled, changed, total, pct: changed / total * 100,
+    coverage: compared / (w * h) * 100,
     meanAbs: sumAbs / (total * 3), maxDiff, psnr: mse === 0 ? Infinity : 10 * Math.log10(255 * 255 / mse),
     clusters, widespread, overlay: ovc
   };
@@ -2698,6 +2807,9 @@ const cmpSlots = {
   B: { el: document.getElementById('cmpSlotB'), input: document.getElementById('cmpFileB') }
 };
 let cmpTolerance = 6;
+let cmpPosTol = 1;
+let cmpAlignOn = true;
+let cmpAlignCache = null;   // { key, value } for the currently loaded pair
 let cmpRunId = 0;
 let cmpDiffTimer = null;
 
@@ -2709,6 +2821,9 @@ function cmpReset(key) {
 }
 function cmpFreeAll() {
   cmpRunId++;
+  cmpAlignCache = null;
+  document.querySelectorAll('.cmp-drop-text').forEach(el => { el.textContent = 'choose or drop an image'; });
+  cmpBothInput.value = '';
   ['A', 'B'].forEach(cmpReset);
   cmpSlots.A.el.querySelector('.cmp-info').innerHTML = '';
   cmpSlots.B.el.querySelector('.cmp-info').innerHTML = '';
@@ -2724,17 +2839,36 @@ new MutationObserver(() => { if (!modalCompare.classList.contains('open')) cmpFr
 
 ['A', 'B'].forEach(key => {
   const s = cmpSlots[key];
-  s.input.addEventListener('change', () => { if (s.input.files[0]) cmpLoad(key, s.input.files[0]); });
+  s.input.addEventListener('change', () => { const f = s.input.files[0]; s.input.value = ''; if (f) cmpLoad(key, f); });
   s.el.addEventListener('dragover', e => { e.preventDefault(); s.el.classList.add('drag'); });
   s.el.addEventListener('dragleave', () => s.el.classList.remove('drag'));
   s.el.addEventListener('drop', e => {
     e.preventDefault(); s.el.classList.remove('drag');
-    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|avif|heic)$/i.test(f.name));
+    const files = cmpImageFiles(e.dataTransfer.files);
     if (!files.length) return;
-    cmpLoad(key, files[0]);
-    if (files[1]) cmpLoad(key === 'A' ? 'B' : 'A', files[1]);
+    if (files.length === 1) cmpLoad(key, files[0]);
+    else cmpLoadPair(files);
   });
 });
+
+function cmpImageFiles(list) {
+  return Array.from(list).filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|avif|heic)$/i.test(f.name));
+}
+// Two (or more) files at once: first -> A, second -> B (sorted by name). One file: next free slot.
+async function cmpLoadPair(files) {
+  const imgs = files.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  if (!imgs.length) return;
+  if (imgs.length === 1) { await cmpLoad(!cmpSlots.A.bmp ? 'A' : 'B', imgs[0]); return; }
+  if (imgs.length > 2) showToast('Only the first two images are used');
+  await cmpLoad('A', imgs[0]);
+  await cmpLoad('B', imgs[1]);
+}
+const cmpBothInput = document.getElementById('cmpFileBoth');
+const cmpBothLabel = document.getElementById('cmpBoth');
+cmpBothInput.addEventListener('change', () => { const f = cmpImageFiles(cmpBothInput.files); cmpBothInput.value = ''; cmpLoadPair(f); });
+cmpBothLabel.addEventListener('dragover', e => { e.preventDefault(); cmpBothLabel.classList.add('drag'); });
+cmpBothLabel.addEventListener('dragleave', () => cmpBothLabel.classList.remove('drag'));
+cmpBothLabel.addEventListener('drop', e => { e.preventDefault(); cmpBothLabel.classList.remove('drag'); cmpLoadPair(cmpImageFiles(e.dataTransfer.files)); });
 
 function cmpFmtDate(ms) { try { return new Date(ms).toLocaleString(); } catch (e) { return '—'; } }
 
@@ -2743,6 +2877,7 @@ async function cmpLoad(key, file) {
   cmpReset(key);
   cmpResult.innerHTML = '';
   cmpRunId++;
+  cmpAlignCache = null;
   const info = s.el.querySelector('.cmp-info');
   info.innerHTML = `<p class="muted small">Analysing ${cmpEsc(file.name)} …</p>`;
   s.file = file;
@@ -2778,6 +2913,7 @@ function cmpHashRow(label, value) {
 
 function renderSlot(key) {
   const s = cmpSlots[key];
+  s.el.querySelector('.cmp-drop-text').textContent = 'replace image';
   const info = s.el.querySelector('.cmp-info');
   const j = s.jpeg;
   const rows = [
@@ -2885,10 +3021,17 @@ function cmpUpdateResult() {
       <span id="cmpTolVal">${cmpTolerance}</span>
     </div>
     <p class="muted small">Ignores small colour deviations (e.g. JPEG recompression noise). 0 = every difference counts.</p>
+    <div class="cmp-tol">
+      <label for="cmpPos">Position tolerance</label>
+      <input type="range" id="cmpPos" min="0" max="5" value="${cmpPosTol}">
+      <span id="cmpPosVal">${cmpPosTol} px</span>
+    </div>
+    <p class="muted small">A pixel only counts as different if nothing matching is found within this distance – useful when the images are slightly shifted.</p>
+    <label class="cmp-check"><input type="checkbox" id="cmpAlign" ${cmpAlignOn ? 'checked' : ''}> Auto-align B to A (shift &amp; scale)</label>
     <div id="cmpDiffInfo" class="muted small">Calculating …</div>
     <div class="cmp-viewer" id="cmpViewer" style="aspect-ratio:${A.bmp.width} / ${A.bmp.height}">
       <img src="${A.url}" alt="A" draggable="false">
-      <img src="${B.url}" alt="B" class="cmp-top" id="cmpTopImg" draggable="false">
+      <div class="cmp-top" id="cmpTopImg"><img src="${B.url}" alt="B" id="cmpBImg" draggable="false"></div>
       <canvas id="cmpOverlay" class="cmp-overlay" style="display:none"></canvas>
       <div class="cmp-handle" id="cmpHandle"></div>
       <span class="cmp-tag cmp-tag-a">A</span><span class="cmp-tag cmp-tag-b">B</span>
@@ -2928,6 +3071,14 @@ function cmpUpdateResult() {
   const showDiff = document.getElementById('cmpShowDiff');
   const ovCanvas = document.getElementById('cmpOverlay');
   showDiff.addEventListener('change', () => { ovCanvas.style.display = (showDiff.checked && ovCanvas.width > 1) ? 'block' : 'none'; });
+  const posEl = document.getElementById('cmpPos');
+  posEl.addEventListener('input', () => {
+    cmpPosTol = +posEl.value;
+    document.getElementById('cmpPosVal').textContent = cmpPosTol + ' px';
+    clearTimeout(cmpDiffTimer);
+    cmpDiffTimer = setTimeout(cmpRunDiff, 250);
+  });
+  document.getElementById('cmpAlign').addEventListener('change', (e) => { cmpAlignOn = e.target.checked; cmpRunDiff(); });
   const tol = document.getElementById('cmpTol');
   tol.addEventListener('input', () => {
     cmpTolerance = +tol.value;
@@ -2938,6 +3089,13 @@ function cmpUpdateResult() {
   cmpRunDiff();
 }
 
+function cmpApplyViewerAlign(al) {
+  const img = document.getElementById('cmpBImg');
+  if (!img) return;
+  img.style.transformOrigin = '50% 50%';
+  img.style.transform = al && al.aligned ? `translate(${al.tx * 100}%, ${al.ty * 100}%) scale(${al.s})` : '';
+}
+
 async function cmpRunDiff() {
   const A = cmpSlots.A, B = cmpSlots.B;
   const infoEl = document.getElementById('cmpDiffInfo');
@@ -2946,7 +3104,20 @@ async function cmpRunDiff() {
   infoEl.className = 'muted small';
   infoEl.textContent = 'Calculating …';
   let r;
-  try { r = await cmpDiff(A.bmp, B.bmp, cmpTolerance, () => my !== cmpRunId); }
+  let al = null;
+  try {
+    if (cmpAlignOn) {
+      if (!cmpAlignCache) {
+        infoEl.textContent = 'Aligning …';
+        const val = await cmpAlignImages(A.bmp, B.bmp);
+        if (my !== cmpRunId) return;
+        cmpAlignCache = val;
+      }
+      al = cmpAlignCache;
+    }
+    cmpApplyViewerAlign(al);
+    r = await cmpDiff(A.bmp, B.bmp, cmpTolerance, cmpPosTol, al, () => my !== cmpRunId);
+  }
   catch (e) { infoEl.textContent = 'Pixel comparison failed (image too large for this device?).'; return; }
   if (r === null || my !== cmpRunId) return;
   const ovCanvas = document.getElementById('cmpOverlay');
@@ -2968,6 +3139,9 @@ async function cmpRunDiff() {
     else parts.push('Only scattered single pixels differ (no region marked).');
   }
   parts.push(`Mean deviation ${r.meanAbs.toFixed(2)} / 255 · max ${r.maxDiff} · PSNR ${r.psnr === Infinity ? '∞' : r.psnr.toFixed(1) + ' dB'}`);
+  if (al && al.aligned) parts.push(`Aligned: B shifted ${al.dx.toFixed(1)} / ${al.dy.toFixed(1)} px, scaled ×${al.s.toFixed(3)}.`);
+  else if (cmpAlignOn) parts.push('No alignment needed.');
+  if (r.coverage < 99.5) parts.push(`Compared area: ${r.coverage.toFixed(1)} % of the image (B does not cover the rest).`);
   if (r.scaled) parts.push('<span class="cmp-bad">Different dimensions – B was scaled to A, so the result is less precise.</span>');
   infoEl.className = 'small';
   infoEl.innerHTML = parts.join('<br>');

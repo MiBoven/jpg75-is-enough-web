@@ -352,3 +352,9 @@ footer { text-align: center; color: var(--text-secondary); font-size: 12px; marg
 .cmp-tbl th { text-align: left; color: var(--text-secondary); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--border); }
 .cmp-tbl td, .modal .cmp-tbl td { padding: 4px 6px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; font-family: inherit; color: var(--text); white-space: normal; }
 .cmp-tbl tr.cmp-diff td { color: var(--danger); }
+.cmp-both {
+  display: block; text-align: center; padding: 10px; margin-bottom: 12px; border-radius: 10px; cursor: pointer;
+  background: var(--accent); color: var(--accent-text); font-size: 14px; font-weight: 600;
+}
+.cmp-both.drag { outline: 2px dashed var(--text); }
+.cmp-viewer .cmp-top { position: absolute; inset: 0; overflow: visible; }

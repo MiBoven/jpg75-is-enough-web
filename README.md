@@ -67,9 +67,10 @@ A tiny, privacy-friendly web app that converts images to JPG at a reduced qualit
   - Each image can opt out via **Watermark on this image** in its expanded panel. The PNG/WebP export includes the watermark automatically; **Show original** shows the image without it
   - SVGs are loaded as images, so scripts and external resources inside them are never executed. They need a `width`/`height` or a `viewBox`, and text inside should be converted to paths (fonts aren't loaded)
 - **Reset all**: restores Quality, Resize, Rename, Watermark, and Export settings (and every image's rotation, per-image name override, and watermark switch) back to their defaults — the uploaded/converted images and the loaded watermark file stay, unlike **Remove all**
-- **Compare images** *(experimental, only via the ⋮ menu → "Compare (experimental)")*: pick or drop two images (A and B) and compare them locally:
+- **Compare images** *(experimental, only via the ⋮ menu → "Compare (experimental)")*: pick or drop two images (A and B) and compare them locally – **"Choose 2 images at once"** loads both in one dialog (sorted by name; a single file fills the next free slot), and either slot can be replaced later on its own:
   - **Checksums**: SHA-256 (plus SHA-1 / SHA-512) of each file and a **pixel hash** over the decoded pixels – equal pixel hashes with different file hashes mean only metadata or file structure differ. An optional **expected hash** field shows a green/red match (algorithm detected by length)
   - **Pixel differences** with adjustable tolerance (ignores JPEG recompression noise): red overlay, yellow boxes around a few changed regions, percentage of changed pixels, mean deviation and PSNR; widespread changes are reported instead of drawing many boxes. Different dimensions are compared by scaling B to A (marked as less precise); very different aspect ratios are not compared
+  - **Auto-align** (on by default): B is automatically shifted and scaled onto A before comparing (coarse-to-fine search, shown in the result and in the swipe viewer), and a **position tolerance** (0–5 px) ignores differences that have a matching pixel nearby – so slightly shifted or re-rendered copies no longer show up as completely different
   - **Metadata**: JPEG segment inventory (EXIF, ICC, XMP, comments … with sizes) and a table of only the differing EXIF tags
   - **Extras**: perceptual similarity in %, A/B swipe slider, estimated JPEG quality, chroma subsampling, baseline/progressive, GPS presence
   - Images in the list that are byte-identical copies get a small "Identical file" hint
@@ -106,6 +107,11 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Formats not natively decodable by the browser's `<img>`/`<canvas>` (e.g. HEIC in most non-Safari browsers) cannot be converted. EXIF capture-date reading for the `$Y`/`$M`/`$D`/`$h`/`$m`/`$s` placeholders, and EXIF preservation in general, only works on JPEG source files that contain EXIF metadata; other formats and JPEGs without EXIF data use the file's last-modified date instead and won't have metadata to preserve.
 
 ## Changelog
+
+### 1.13.0 — 2026-11-05 — Compare: auto-align & two-file picker
+- Compare: new **Auto-align B to A** option (shift and scale, on by default) and **Position tolerance** slider (0–5 px), so slightly shifted, rescaled or re-rendered images are no longer reported as almost entirely different; the result shows the applied shift/scale and the compared area
+- Compare: **"Choose 2 images at once"** button (multi-select or drop two files; sorted by name); single slots can still be replaced individually
+- Compare: the swipe viewer shows B in its aligned position
 
 ### 1.12.0 — 2026-11-04 — Compare images (experimental)
 - Added an experimental **Compare** dialog (⋮ menu): file checksums (SHA-256/SHA-1/SHA-512), pixel hash, expected-hash check, pixel-difference overlay with tolerance and region boxes, JPEG segment and EXIF tag differences, perceptual similarity, A/B swipe slider, estimated JPEG quality
